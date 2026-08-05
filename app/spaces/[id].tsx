@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,26 +12,97 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import {
+  buildTripUpdatePayload,
+  EditTripModal,
+  tripFormFromSpace,
+  type TripEditForm,
+} from '@/components/spaces/EditTripModal';
 import { PeakButton } from '@/components/ui/PeakButton';
 import { PeakCard } from '@/components/ui/PeakCard';
+import { useAuth } from '@/contexts/auth-provider';
 import { PeakColors } from '@/constants/colors';
 import { BorderRadius, Spacing, Typography } from '@/constants/theme';
 import { useInspirationRefresh } from '@/hooks/use-inspiration-refresh';
 import { colorBackground } from '@/lib/space-colors';
-import { warnSpacesWithNullOwner } from '@/lib/spaces';
+import { formatSupabaseError, warnSpacesWithNullOwner } from '@/lib/spaces';
+import { formatTripDateRange } from '@/lib/trip-dates';
 import { supabase } from '@/lib/supabase';
-import type { Inspiration, Space } from '@/types/database';
+import type { Inspiration, Profile, Space, SpaceMember } from '@/types/database';
 
 type LoadState = 'loading' | 'success' | 'error';
 
+type MemberPreview = SpaceMember & {
+  profiles: Pick<Profile, 'id' | 'email' | 'full_name' | 'avatar_url'> | null;
+};
+
+type OwnerPreview = Pick<Profile, 'id' | 'email' | 'full_name' | 'avatar_url'> | null;
+
+function memberDisplayName(profile: OwnerPreview): string {
+  if (!profile) return 'Member';
+  return profile.full_name?.trim() || profile.email?.trim() || 'Member';
+}
+
+function memberInitials(profile: OwnerPreview): string {
+  const name = memberDisplayName(profile);
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+}
+
+function TripDetailRow({
+  icon,
+  label,
+  value,
+  emptyLabel,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  label: string;
+  value: string | null;
+  emptyLabel: string;
+}) {
+  const hasValue = Boolean(value?.trim());
+  return (
+    <View style={styles.tripRow}>
+      <View style={styles.tripIconWrap}>
+        <Ionicons name={icon} size={20} color={PeakColors.primary} />
+      </View>
+      <View style={styles.tripRowText}>
+        <Text style={styles.tripRowLabel}>{label}</Text>
+        <Text style={[styles.tripRowValue, !hasValue && styles.tripRowEmpty]}>
+          {hasValue ? value : emptyLabel}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 export default function SpaceDetailsScreen() {
+  const { user } = useAuth();
   const { id } = useLocalSearchParams<{ id: string }>();
   const spaceId = Array.isArray(id) ? id[0] : id;
 
   const [space, setSpace] = useState<Space | null>(null);
   const [inspiration, setInspiration] = useState<Inspiration[]>([]);
+  const [members, setMembers] = useState<MemberPreview[]>([]);
+  const [ownerProfile, setOwnerProfile] = useState<OwnerPreview>(null);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const [editTripVisible, setEditTripVisible] = useState(false);
+  const [tripForm, setTripForm] = useState<TripEditForm>({
+    description: '',
+    startDate: '',
+    endDate: '',
+    airport: '',
+    lodging: '',
+  });
+  const [tripSaveError, setTripSaveError] = useState<string | null>(null);
+  const [tripSaving, setTripSaving] = useState(false);
+
+  const isOwner = Boolean(user?.id && space?.owner_id && user.id === space.owner_id);
 
   const fetchSpaceDetails = useCallback(async () => {
     if (!spaceId) {
@@ -42,19 +114,26 @@ export default function SpaceDetailsScreen() {
     setLoadState('loading');
     setErrorMessage(null);
 
-    const [spaceResult, inspirationResult] = await Promise.all([
+    const [spaceResult, inspirationResult, membersResult] = await Promise.all([
       supabase.from('spaces').select('*').eq('id', spaceId).single(),
       supabase
         .from('inspiration')
         .select('*')
         .eq('space_id', spaceId)
         .order('created_at', { ascending: false }),
+      supabase
+        .from('space_members')
+        .select('*, profiles ( id, email, full_name, avatar_url )')
+        .eq('space_id', spaceId)
+        .order('created_at', { ascending: true }),
     ]);
 
     if (spaceResult.error) {
       setErrorMessage(spaceResult.error.message || 'Could not load this space.');
       setSpace(null);
       setInspiration([]);
+      setMembers([]);
+      setOwnerProfile(null);
       setLoadState('error');
       return;
     }
@@ -63,16 +142,31 @@ export default function SpaceDetailsScreen() {
       setErrorMessage(inspirationResult.error.message || 'Could not load inspiration for this space.');
       setSpace(spaceResult.data);
       setInspiration([]);
+      setMembers((membersResult.data as MemberPreview[] | null) ?? []);
       setLoadState('error');
-      return;
+    } else {
+      setSpace(spaceResult.data);
+      setInspiration(inspirationResult.data ?? []);
+      setMembers((membersResult.data as MemberPreview[] | null) ?? []);
+      setLoadState('success');
     }
 
-    setSpace(spaceResult.data);
-    setInspiration(inspirationResult.data ?? []);
+    const ownerId = spaceResult.data?.owner_id;
+    if (ownerId) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, avatar_url')
+        .eq('id', ownerId)
+        .maybeSingle();
+      setOwnerProfile(profile);
+    } else {
+      setOwnerProfile(null);
+    }
+
     if (spaceResult.data) {
       warnSpacesWithNullOwner([spaceResult.data]);
+      setTripForm(tripFormFromSpace(spaceResult.data));
     }
-    setLoadState('success');
   }, [spaceId]);
 
   useInspirationRefresh(fetchSpaceDetails, { spaceId: spaceId ?? null });
@@ -83,6 +177,57 @@ export default function SpaceDetailsScreen() {
       pathname: '/save',
       params: { spaceId },
     });
+  };
+
+  const openEditTrip = () => {
+    if (!space) return;
+    setTripForm(tripFormFromSpace(space));
+    setTripSaveError(null);
+    setEditTripVisible(true);
+  };
+
+  const closeEditTrip = () => {
+    if (tripSaving) return;
+    setEditTripVisible(false);
+    setTripSaveError(null);
+    if (space) {
+      setTripForm(tripFormFromSpace(space));
+    }
+  };
+
+  const handleSaveTrip = async () => {
+    if (!spaceId || !space) return;
+
+    const { payload, error: validationError } = buildTripUpdatePayload(tripForm);
+    if (validationError || !payload) {
+      setTripSaveError(validationError ?? 'Could not validate trip details.');
+      return;
+    }
+
+    setTripSaveError(null);
+    setTripSaving(true);
+
+    const { data, error } = await supabase
+      .from('spaces')
+      .update(payload)
+      .eq('id', spaceId)
+      .select()
+      .single();
+
+    setTripSaving(false);
+
+    if (error || !data) {
+      setTripSaveError(error ? formatSupabaseError(error) : 'Could not save trip details.');
+      return;
+    }
+
+    setSpace(data);
+    setTripForm(tripFormFromSpace(data));
+    setEditTripVisible(false);
+  };
+
+  const showInvitePlaceholder = () => {
+    Alert.alert('Invites coming soon', 'You will be able to invite friends to this trip in a future update.');
   };
 
   if (loadState === 'loading' && !space) {
@@ -119,6 +264,10 @@ export default function SpaceDetailsScreen() {
   }
 
   const heroBackground = colorBackground(space.color);
+  const dateRange = formatTripDateRange(space.start_date, space.end_date);
+  const otherMembers = members.filter(
+    (member) => member.user_id !== space.owner_id && member.role !== 'owner',
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -129,6 +278,13 @@ export default function SpaceDetailsScreen() {
           <Pressable accessibilityRole="button" hitSlop={12} onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={24} color={PeakColors.textPrimary} />
           </Pressable>
+          {isOwner ? (
+            <Pressable accessibilityRole="button" hitSlop={12} onPress={openEditTrip}>
+              <Text style={styles.editTripLink}>Edit trip</Text>
+            </Pressable>
+          ) : (
+            <View style={styles.topBarSpacer} />
+          )}
         </View>
 
         <View style={[styles.hero, { backgroundColor: heroBackground }]}>
@@ -144,6 +300,78 @@ export default function SpaceDetailsScreen() {
             <Text style={styles.heroDestinationMuted}>No destination set</Text>
           )}
         </View>
+
+        <View style={styles.blockHeader}>
+          <Text style={styles.blockTitle}>Trip details</Text>
+        </View>
+
+        <PeakCard style={styles.blockCard} padding="md">
+          {space.description?.trim() ? (
+            <Text style={styles.descriptionBody}>{space.description.trim()}</Text>
+          ) : (
+            <Text style={styles.emptyInline}>No trip description yet.</Text>
+          )}
+
+          <View style={styles.tripDivider} />
+
+          <TripDetailRow
+            emptyLabel="Dates not set"
+            icon="calendar-outline"
+            label="Dates"
+            value={dateRange}
+          />
+          <TripDetailRow
+            emptyLabel="Airport not added"
+            icon="airplane-outline"
+            label="Airport / flights"
+            value={space.airport}
+          />
+          <TripDetailRow
+            emptyLabel="Lodging not added"
+            icon="bed-outline"
+            label="Lodging"
+            value={space.lodging}
+          />
+        </PeakCard>
+
+        <View style={styles.blockHeader}>
+          <Text style={styles.blockTitle}>Members</Text>
+        </View>
+
+        <PeakCard style={styles.blockCard} padding="md">
+          <View style={styles.memberRow}>
+            <View style={[styles.memberAvatar, styles.memberAvatarOwner]}>
+              <Text style={styles.memberAvatarText}>{memberInitials(ownerProfile)}</Text>
+            </View>
+            <View style={styles.memberInfo}>
+              <Text style={styles.memberName}>{memberDisplayName(ownerProfile)}</Text>
+              <Text style={styles.memberRole}>Owner</Text>
+            </View>
+          </View>
+
+          {otherMembers.map((member) => (
+            <View key={member.id} style={styles.memberRow}>
+              <View style={styles.memberAvatar}>
+                <Text style={styles.memberAvatarText}>{memberInitials(member.profiles)}</Text>
+              </View>
+              <View style={styles.memberInfo}>
+                <Text style={styles.memberName}>{memberDisplayName(member.profiles)}</Text>
+                <Text style={styles.memberRole}>{member.role}</Text>
+              </View>
+            </View>
+          ))}
+
+          {members.length === 0 && !ownerProfile ? (
+            <Text style={styles.emptyInline}>No members listed yet.</Text>
+          ) : null}
+
+          <PeakButton
+            title="Invite people"
+            variant="secondary"
+            onPress={showInvitePlaceholder}
+            style={styles.inviteButton}
+          />
+        </PeakCard>
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Inspiration</Text>
@@ -190,6 +418,16 @@ export default function SpaceDetailsScreen() {
           </View>
         )}
       </ScrollView>
+
+      <EditTripModal
+        form={tripForm}
+        saveError={tripSaveError}
+        saving={tripSaving}
+        visible={editTripVisible}
+        onChange={(patch) => setTripForm((prev) => ({ ...prev, ...patch }))}
+        onClose={closeEditTrip}
+        onSave={handleSaveTrip}
+      />
     </SafeAreaView>
   );
 }
@@ -205,6 +443,16 @@ const styles = StyleSheet.create({
   topBar: {
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  topBarSpacer: {
+    width: 64,
+  },
+  editTripLink: {
+    ...Typography.label,
+    color: PeakColors.primary,
   },
   centered: {
     flex: 1,
@@ -264,6 +512,96 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     marginTop: Spacing.sm,
     fontStyle: 'italic',
+  },
+  blockHeader: {
+    paddingHorizontal: Spacing.lg,
+    marginTop: Spacing.xl,
+    marginBottom: Spacing.sm,
+  },
+  blockTitle: {
+    ...Typography.h2,
+  },
+  blockCard: {
+    marginHorizontal: Spacing.lg,
+  },
+  descriptionBody: {
+    ...Typography.body,
+  },
+  emptyInline: {
+    ...Typography.bodySmall,
+    fontStyle: 'italic',
+    color: PeakColors.textSecondary,
+  },
+  tripDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: PeakColors.border,
+    marginVertical: Spacing.md,
+  },
+  tripRow: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  tripIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.medium,
+    backgroundColor: PeakColors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tripRowText: {
+    flex: 1,
+  },
+  tripRowLabel: {
+    ...Typography.caption,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  tripRowValue: {
+    ...Typography.bodySmall,
+    marginTop: 2,
+  },
+  tripRowEmpty: {
+    fontStyle: 'italic',
+    color: PeakColors.textMuted,
+  },
+  memberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  memberAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.pill,
+    backgroundColor: PeakColors.aquaLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  memberAvatarOwner: {
+    backgroundColor: PeakColors.primaryLight,
+  },
+  memberAvatarText: {
+    ...Typography.caption,
+    fontWeight: '800',
+    color: PeakColors.navy,
+  },
+  memberInfo: {
+    flex: 1,
+  },
+  memberName: {
+    ...Typography.label,
+  },
+  memberRole: {
+    ...Typography.caption,
+    marginTop: 2,
+    textTransform: 'capitalize',
+  },
+  inviteButton: {
+    marginTop: Spacing.sm,
   },
   sectionHeader: {
     flexDirection: 'row',

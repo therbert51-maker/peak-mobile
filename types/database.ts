@@ -51,6 +51,11 @@ export type Database = {
           destination: string | null;
           color: string;
           owner_id: string | null;
+          description: string | null;
+          start_date: string | null;
+          end_date: string | null;
+          airport: string | null;
+          lodging: string | null;
         };
         Insert: {
           id?: string;
@@ -60,6 +65,11 @@ export type Database = {
           destination?: string | null;
           color?: string;
           owner_id: string;
+          description?: string | null;
+          start_date?: string | null;
+          end_date?: string | null;
+          airport?: string | null;
+          lodging?: string | null;
         };
         Update: {
           id?: string;
@@ -69,6 +79,11 @@ export type Database = {
           destination?: string | null;
           color?: string;
           owner_id?: string | null;
+          description?: string | null;
+          start_date?: string | null;
+          end_date?: string | null;
+          airport?: string | null;
+          lodging?: string | null;
         };
         Relationships: [];
       };
