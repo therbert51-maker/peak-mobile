@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
@@ -17,7 +16,9 @@ import { PeakButton } from '@/components/ui/PeakButton';
 import { PeakCard } from '@/components/ui/PeakCard';
 import { PeakColors } from '@/constants/colors';
 import { BorderRadius, Spacing, Typography } from '@/constants/theme';
+import { useInspirationRefresh } from '@/hooks/use-inspiration-refresh';
 import { colorBackground } from '@/lib/space-colors';
+import { warnSpacesWithNullOwner } from '@/lib/spaces';
 import { supabase } from '@/lib/supabase';
 import type { Inspiration, Space } from '@/types/database';
 
@@ -69,14 +70,13 @@ export default function SpaceDetailsScreen() {
 
     setSpace(spaceResult.data);
     setInspiration(inspirationResult.data ?? []);
+    if (spaceResult.data) {
+      warnSpacesWithNullOwner([spaceResult.data]);
+    }
     setLoadState('success');
   }, [spaceId]);
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchSpaceDetails();
-    }, [fetchSpaceDetails]),
-  );
+  useInspirationRefresh(fetchSpaceDetails, { spaceId: spaceId ?? null });
 
   const openSaveWithSpace = () => {
     if (!spaceId) return;

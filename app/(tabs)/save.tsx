@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,10 +16,15 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { PhotoPlaceholder } from '@/components/save/PhotoPlaceholder';
+import { SaveSuccessModal } from '@/components/save/SaveSuccessModal';
 import { PeakButton } from '@/components/ui/PeakButton';
 import { PeakInput } from '@/components/ui/PeakInput';
+import { useAuth } from '@/contexts/auth-provider';
 import { PeakColors } from '@/constants/colors';
 import { BorderRadius, Spacing, Typography } from '@/constants/theme';
+import { notifyInspirationSaved } from '@/lib/inspiration-refresh';
+import { formatSupabaseError, warnSpacesWithNullOwner } from '@/lib/spaces';
 import { supabase } from '@/lib/supabase';
 import type { Space } from '@/types/database';
 
@@ -30,43 +35,43 @@ const initialForm = {
   spaceId: null as string | null,
 };
 
-function formatSupabaseError(error: {
-  message?: string;
-  details?: string;
-  hint?: string;
-  code?: string;
-}): string {
-  return [error.message, error.details, error.hint, error.code ? `Code: ${error.code}` : null]
-    .filter(Boolean)
-    .join('\n\n');
-}
+const SUCCESS_MODAL_MS = 1500;
 
 export default function SaveScreen() {
+  const { user } = useAuth();
   const { spaceId: spaceIdParam } = useLocalSearchParams<{ spaceId?: string | string[] }>();
   const preselectedSpaceId = Array.isArray(spaceIdParam) ? spaceIdParam[0] : spaceIdParam;
 
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [spacesLoading, setSpacesLoading] = useState(true);
+  const [spacesError, setSpacesError] = useState<string | null>(null);
 
   const [form, setForm] = useState(initialForm);
   const [titleError, setTitleError] = useState<string | null>(null);
   const [spaceError, setSpaceError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [successModalVisible, setSuccessModalVisible] = useState(false);
 
   const [spacePickerVisible, setSpacePickerVisible] = useState(false);
+  const savedSpaceIdRef = useRef<string | null>(null);
 
   const fetchSpaces = useCallback(async () => {
     setSpacesLoading(true);
+    setSpacesError(null);
 
     const { data, error } = await supabase
       .from('spaces')
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (!error) {
-      setSpaces(data ?? []);
+    if (error) {
+      setSpacesError(error.message || 'Could not load your spaces.');
+      setSpaces([]);
+    } else {
+      const rows = data ?? [];
+      warnSpacesWithNullOwner(rows);
+      setSpaces(rows);
     }
 
     setSpacesLoading(false);
@@ -79,31 +84,29 @@ export default function SaveScreen() {
         setForm((prev) => ({ ...prev, spaceId: preselectedSpaceId }));
         setSpaceError(null);
       }
-      if (!saving && !saved) {
+      if (!saving && !successModalVisible) {
         setSaveError(null);
       }
-    }, [fetchSpaces, preselectedSpaceId, saved, saving]),
+    }, [fetchSpaces, preselectedSpaceId, saving, successModalVisible]),
   );
 
   useEffect(() => {
-    if (!saved) return;
+    if (!successModalVisible) return;
 
     const timer = setTimeout(() => {
-      setSaved(false);
-      router.navigate('/');
-    }, 1500);
+      setSuccessModalVisible(false);
+      setForm(initialForm);
+      setTitleError(null);
+      setSpaceError(null);
+      setSaveError(null);
+      notifyInspirationSaved(savedSpaceIdRef.current);
+      router.replace('/');
+    }, SUCCESS_MODAL_MS);
 
     return () => clearTimeout(timer);
-  }, [saved]);
+  }, [successModalVisible]);
 
   const selectedSpace = spaces.find((space) => space.id === form.spaceId);
-
-  const resetForm = () => {
-    setForm(initialForm);
-    setTitleError(null);
-    setSpaceError(null);
-    setSaveError(null);
-  };
 
   const handleSave = async () => {
     const trimmedTitle = form.title.trim();
@@ -125,6 +128,13 @@ export default function SaveScreen() {
 
     if (hasError) return;
 
+    if (!user?.id) {
+      const message = 'You must be signed in to save inspiration.';
+      setSaveError(message);
+      Alert.alert('Could not save inspiration', message);
+      return;
+    }
+
     setSaveError(null);
     setSaving(true);
 
@@ -134,6 +144,7 @@ export default function SaveScreen() {
         url: form.url.trim() || null,
         notes: form.notes.trim() || null,
         space_id: form.spaceId!,
+        created_by: user.id,
       });
 
       if (error) {
@@ -144,8 +155,8 @@ export default function SaveScreen() {
         return;
       }
 
-      resetForm();
-      setSaved(true);
+      savedSpaceIdRef.current = form.spaceId;
+      setSuccessModalVisible(true);
     } catch (error) {
       console.error('Save inspiration unexpected error:', error);
       const message =
@@ -156,21 +167,6 @@ export default function SaveScreen() {
       setSaving(false);
     }
   };
-
-  if (saved) {
-    return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.successContainer}>
-          <View style={styles.successIconWrap}>
-            <Ionicons name="checkmark-circle" size={56} color={PeakColors.success} />
-          </View>
-          <Text style={styles.successTitle}>Saved!</Text>
-          <Text style={styles.successMessage}>Your inspiration is ready on Home.</Text>
-          <ActivityIndicator style={styles.successSpinner} color={PeakColors.primary} />
-        </View>
-      </SafeAreaView>
-    );
-  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -189,6 +185,7 @@ export default function SaveScreen() {
 
           <PeakInput
             autoCapitalize="sentences"
+            editable={!saving && !successModalVisible}
             error={titleError ?? undefined}
             label="Title"
             placeholder="Hidden beach in Mallorca"
@@ -203,6 +200,7 @@ export default function SaveScreen() {
             autoCapitalize="none"
             autoCorrect={false}
             containerStyle={styles.fieldGap}
+            editable={!saving && !successModalVisible}
             keyboardType="url"
             label="URL (optional)"
             placeholder="https://..."
@@ -212,6 +210,7 @@ export default function SaveScreen() {
 
           <PeakInput
             containerStyle={styles.fieldGap}
+            editable={!saving && !successModalVisible}
             label="Notes (optional)"
             multiline
             numberOfLines={4}
@@ -223,10 +222,15 @@ export default function SaveScreen() {
           />
 
           <View style={styles.fieldGap}>
+            <Text style={styles.fieldLabel}>Photo (optional)</Text>
+            <PhotoPlaceholder />
+          </View>
+
+          <View style={styles.fieldGap}>
             <Text style={styles.fieldLabel}>Space</Text>
             <Pressable
               accessibilityRole="button"
-              disabled={spacesLoading || spaces.length === 0}
+              disabled={spacesLoading || spaces.length === 0 || saving || successModalVisible}
               onPress={() => setSpacePickerVisible(true)}
               style={({ pressed }) => [
                 styles.spaceSelect,
@@ -251,6 +255,7 @@ export default function SaveScreen() {
               <Ionicons name="chevron-down" size={20} color={PeakColors.textSecondary} />
             </Pressable>
             {spaceError ? <Text style={styles.fieldError}>{spaceError}</Text> : null}
+            {spacesError ? <Text style={styles.fieldError}>{spacesError}</Text> : null}
             {spaces.length === 0 && !spacesLoading ? (
               <PeakButton
                 title="Go to Spaces"
@@ -264,6 +269,7 @@ export default function SaveScreen() {
           {saveError ? <Text style={styles.saveError}>{saveError}</Text> : null}
 
           <PeakButton
+            disabled={successModalVisible}
             fullWidth
             loading={saving}
             title="Save inspiration"
@@ -272,6 +278,8 @@ export default function SaveScreen() {
           />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <SaveSuccessModal visible={successModalVisible} />
 
       <Modal
         animationType="slide"
@@ -417,27 +425,6 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     marginTop: Spacing.xl,
-  },
-  successContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.xl,
-  },
-  successIconWrap: {
-    marginBottom: Spacing.md,
-  },
-  successTitle: {
-    ...Typography.h1,
-    color: PeakColors.success,
-  },
-  successMessage: {
-    ...Typography.bodySmall,
-    marginTop: Spacing.sm,
-    textAlign: 'center',
-  },
-  successSpinner: {
-    marginTop: Spacing.lg,
   },
   modalContainer: {
     flex: 1,

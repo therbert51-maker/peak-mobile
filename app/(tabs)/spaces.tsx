@@ -18,9 +18,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { PeakButton } from '@/components/ui/PeakButton';
 import { PeakCard } from '@/components/ui/PeakCard';
 import { PeakInput } from '@/components/ui/PeakInput';
+import { useAuth } from '@/contexts/auth-provider';
 import { PeakColors } from '@/constants/colors';
 import { BorderRadius, Spacing, Typography } from '@/constants/theme';
 import { colorBackground, SPACE_COLOR_OPTIONS } from '@/lib/space-colors';
+import { formatSupabaseError, warnSpacesWithNullOwner } from '@/lib/spaces';
 import { supabase } from '@/lib/supabase';
 import type { Space } from '@/types/database';
 
@@ -45,6 +47,7 @@ const initialForm: NewSpaceForm = {
 };
 
 export default function SpacesScreen() {
+  const { user } = useAuth();
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -70,7 +73,9 @@ export default function SpacesScreen() {
       return;
     }
 
-    setSpaces(data ?? []);
+    const rows = data ?? [];
+    warnSpacesWithNullOwner(rows);
+    setSpaces(rows);
     setLoadState('success');
   }, []);
 
@@ -100,6 +105,11 @@ export default function SpacesScreen() {
       return;
     }
 
+    if (!user?.id) {
+      setCreateError('You must be signed in to create a space.');
+      return;
+    }
+
     setNameError(null);
     setCreateError(null);
     setSaving(true);
@@ -109,23 +119,42 @@ export default function SpacesScreen() {
       emoji: form.emoji.trim() || DEFAULT_EMOJI,
       destination: form.destination.trim() || null,
       color: form.color,
+      owner_id: user.id,
     };
 
-    const { data, error } = await supabase.from('spaces').insert(payload).select().single();
+    const { data: createdSpace, error: spaceError } = await supabase
+      .from('spaces')
+      .insert(payload)
+      .select()
+      .single();
 
-    setSaving(false);
-
-    if (error) {
-      setCreateError(error.message || 'Something went wrong while creating your space.');
+    if (spaceError || !createdSpace) {
+      setSaving(false);
+      setCreateError(
+        spaceError
+          ? formatSupabaseError(spaceError)
+          : 'Space was not created. Please try again.',
+      );
       return;
     }
 
-    if (data) {
-      setSpaces((current) => [data, ...current]);
-    } else {
-      await fetchSpaces();
+    const { error: memberError } = await supabase.from('space_members').insert({
+      space_id: createdSpace.id,
+      user_id: user.id,
+      role: 'owner',
+    });
+
+    if (memberError) {
+      await supabase.from('spaces').delete().eq('id', createdSpace.id);
+      setSaving(false);
+      setCreateError(
+        `Could not add you as space owner: ${formatSupabaseError(memberError)}`,
+      );
+      return;
     }
 
+    setSaving(false);
+    setSpaces((current) => [createdSpace, ...current]);
     setModalVisible(false);
     setForm(initialForm);
     setLoadState('success');

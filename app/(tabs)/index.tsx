@@ -1,4 +1,3 @@
-import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
@@ -10,29 +9,14 @@ import {
   View,
 } from 'react-native';
 
+import { useInspirationRefresh } from '@/hooks/use-inspiration-refresh';
+import { warnSpacesWithNullOwner } from '@/lib/spaces';
 import { supabase } from '@/lib/supabase';
-import type { Space } from '@/types/database';
+import type { Inspiration, Space } from '@/types/database';
 
-const inspiration = [
-  {
-    id: '1',
-    emoji: '🌊',
-    title: 'Hidden beach in Mallorca',
-    location: 'Mallorca, Spain',
-  },
-  {
-    id: '2',
-    emoji: '🍸',
-    title: 'Rooftop cocktails',
-    location: 'Lisbon, Portugal',
-  },
-  {
-    id: '3',
-    emoji: '🍜',
-    title: 'Late-night ramen',
-    location: 'Tokyo, Japan',
-  },
-];
+type InspirationListItem = Inspiration & {
+  spaces: Pick<Space, 'emoji' | 'name' | 'destination'> | null;
+};
 
 function formatDestination(destination: string | null): string {
   return destination?.trim() ? destination.trim() : 'No destination yet';
@@ -41,6 +25,8 @@ function formatDestination(destination: string | null): string {
 export default function HomeScreen() {
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [spacesLoading, setSpacesLoading] = useState(true);
+  const [inspiration, setInspiration] = useState<InspirationListItem[]>([]);
+  const [inspirationLoading, setInspirationLoading] = useState(true);
 
   const fetchSpaces = useCallback(async () => {
     setSpacesLoading(true);
@@ -51,20 +37,56 @@ export default function HomeScreen() {
       .order('created_at', { ascending: false });
 
     if (!error) {
-      setSpaces(data ?? []);
+      const rows = data ?? [];
+      warnSpacesWithNullOwner(rows);
+      setSpaces(rows);
     }
 
     setSpacesLoading(false);
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchSpaces();
-    }, [fetchSpaces]),
-  );
+  const fetchInspiration = useCallback(async () => {
+    setInspirationLoading(true);
+
+    const { data, error } = await supabase
+      .from('inspiration')
+      .select('*, spaces ( emoji, name, destination )')
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (!error) {
+      setInspiration((data as InspirationListItem[] | null) ?? []);
+    }
+
+    setInspirationLoading(false);
+  }, []);
+
+  const refreshHome = useCallback(() => {
+    fetchSpaces();
+    fetchInspiration();
+  }, [fetchInspiration, fetchSpaces]);
+
+  useInspirationRefresh(refreshHome);
 
   const goToSpaces = () => {
     router.push('/spaces');
+  };
+
+  const goToSave = () => {
+    router.push('/save');
+  };
+
+  const inspirationSubtitle = (item: InspirationListItem) => {
+    if (item.spaces?.destination?.trim()) {
+      return item.spaces.destination.trim();
+    }
+    if (item.spaces?.name) {
+      return item.spaces.name;
+    }
+    if (item.notes?.trim()) {
+      return item.notes.trim();
+    }
+    return 'Saved inspiration';
   };
 
   return (
@@ -93,7 +115,7 @@ export default function HomeScreen() {
           Keep every restaurant, beach, hotel and hidden gem in one place.
         </Text>
 
-        <TouchableOpacity style={styles.primaryButton}>
+        <TouchableOpacity style={styles.primaryButton} onPress={goToSave}>
           <Text style={styles.primaryButtonText}>＋ Save inspiration</Text>
         </TouchableOpacity>
       </View>
@@ -156,20 +178,39 @@ export default function HomeScreen() {
       </View>
 
       <View style={styles.inspirationList}>
-        {inspiration.map((item) => (
-          <TouchableOpacity key={item.id} style={styles.inspirationCard}>
-            <View style={styles.inspirationImage}>
-              <Text style={styles.inspirationEmoji}>{item.emoji}</Text>
-            </View>
+        {inspirationLoading ? (
+          <View style={styles.inspirationLoading}>
+            <ActivityIndicator size="small" color="#607068" />
+          </View>
+        ) : inspiration.length === 0 ? (
+          <View style={styles.inspirationEmpty}>
+            <Text style={styles.inspirationEmptyText}>
+              Save your first link or idea from the Save tab.
+            </Text>
+            <TouchableOpacity onPress={goToSave}>
+              <Text style={styles.sectionAction}>Save inspiration</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          inspiration.map((item) => (
+            <TouchableOpacity
+              key={item.id}
+              style={styles.inspirationCard}
+              onPress={() => router.push(`/spaces/${item.space_id}`)}
+            >
+              <View style={styles.inspirationImage}>
+                <Text style={styles.inspirationEmoji}>{item.spaces?.emoji ?? '✨'}</Text>
+              </View>
 
-            <View style={styles.inspirationDetails}>
-              <Text style={styles.inspirationTitle}>{item.title}</Text>
-              <Text style={styles.inspirationLocation}>{item.location}</Text>
-            </View>
+              <View style={styles.inspirationDetails}>
+                <Text style={styles.inspirationTitle}>{item.title}</Text>
+                <Text style={styles.inspirationLocation}>{inspirationSubtitle(item)}</Text>
+              </View>
 
-            <Text style={styles.chevron}>›</Text>
-          </TouchableOpacity>
-        ))}
+              <Text style={styles.chevron}>›</Text>
+            </TouchableOpacity>
+          ))
+        )}
       </View>
 
       <View style={styles.splitCard}>
@@ -383,6 +424,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     marginBottom: 32,
     gap: 10,
+  },
+  inspirationLoading: {
+    paddingVertical: 24,
+    alignItems: 'center',
+  },
+  inspirationEmpty: {
+    padding: 20,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    gap: 10,
+  },
+  inspirationEmptyText: {
+    color: '#7B817D',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   inspirationCard: {
     padding: 11,
