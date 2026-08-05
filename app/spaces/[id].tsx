@@ -3,7 +3,6 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -84,14 +83,6 @@ export default function SpaceDetailsScreen() {
       pathname: '/save',
       params: { spaceId },
     });
-  };
-
-  const openUrl = async (url: string) => {
-    const normalized = url.startsWith('http') ? url : `https://${url}`;
-    const canOpen = await Linking.canOpenURL(normalized);
-    if (canOpen) {
-      await Linking.openURL(normalized);
-    }
   };
 
   if (loadState === 'loading' && !space) {
@@ -178,20 +169,21 @@ export default function SpaceDetailsScreen() {
         ) : (
           <View style={styles.inspirationList}>
             {inspiration.map((item) => (
-              <PeakCard key={item.id} style={styles.inspirationCard} padding="md">
+              <PeakCard
+                key={item.id}
+                onPress={() => router.push(`/inspiration/${item.id}`)}
+                padding="md"
+                style={styles.inspirationCard}>
                 <Text style={styles.inspirationTitle}>{item.title}</Text>
                 {item.notes ? (
-                  <Text style={styles.inspirationNotes}>{item.notes}</Text>
+                  <Text style={styles.inspirationNotes} numberOfLines={2}>
+                    {item.notes}
+                  </Text>
                 ) : null}
                 {item.url ? (
-                  <Pressable
-                    accessibilityRole="link"
-                    onPress={() => openUrl(item.url!)}
-                    style={({ pressed }) => pressed && styles.urlPressed}>
-                    <Text style={styles.inspirationUrl} numberOfLines={2}>
-                      {item.url}
-                    </Text>
-                  </Pressable>
+                  <Text style={styles.inspirationUrl} numberOfLines={1}>
+                    {item.url}
+                  </Text>
                 ) : null}
               </PeakCard>
             ))}
@@ -333,9 +325,5 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: PeakColors.primary,
     marginTop: Spacing.sm,
-    textDecorationLine: 'underline',
-  },
-  urlPressed: {
-    opacity: 0.7,
   },
 });

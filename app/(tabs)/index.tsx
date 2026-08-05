@@ -196,7 +196,7 @@ export default function HomeScreen() {
             <TouchableOpacity
               key={item.id}
               style={styles.inspirationCard}
-              onPress={() => router.push(`/spaces/${item.space_id}`)}
+              onPress={() => router.push(`/inspiration/${item.id}`)}
             >
               <View style={styles.inspirationImage}>
                 <Text style={styles.inspirationEmoji}>{item.spaces?.emoji ?? '✨'}</Text>

@@ -31,6 +31,7 @@ function RootNavigation() {
         <Stack.Screen name="sign-up" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="spaces" />
+        <Stack.Screen name="inspiration" />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
       <StatusBar style="auto" />
