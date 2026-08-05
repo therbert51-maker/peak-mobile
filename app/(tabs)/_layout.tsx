@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
+import { useAuth } from '@/contexts/auth-provider';
 import { PeakColors } from '@/constants/colors';
 import { BorderRadius, Spacing } from '@/constants/theme';
 
@@ -23,6 +24,20 @@ function SaveTabIcon({ color, focused }: { color: string; focused: boolean }) {
 }
 
 export default function TabLayout() {
+  const { session, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <View style={styles.authGate}>
+        <ActivityIndicator size="large" color={PeakColors.primary} />
+      </View>
+    );
+  }
+
+  if (!session) {
+    return <Redirect href="/sign-in" />;
+  }
+
   return (
     <Tabs
       screenOptions={{
@@ -88,6 +103,12 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
+  authGate: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: PeakColors.background,
+  },
   tabBar: {
     backgroundColor: PeakColors.surface,
     borderTopWidth: StyleSheet.hairlineWidth,
