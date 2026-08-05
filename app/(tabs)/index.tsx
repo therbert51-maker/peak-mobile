@@ -127,7 +127,11 @@ export default function HomeScreen() {
           contentContainerStyle={styles.horizontalList}
         >
           {spaces.map((space) => (
-            <TouchableOpacity key={space.id} style={styles.spaceCard}>
+            <TouchableOpacity
+              key={space.id}
+              style={styles.spaceCard}
+              onPress={() => router.push(`/spaces/${space.id}`)}
+            >
               <Text style={styles.spaceEmoji}>{space.emoji}</Text>
               <Text style={styles.spaceTitle}>{space.name}</Text>
               <Text style={styles.spaceSubtitle}>{formatDestination(space.destination)}</Text>

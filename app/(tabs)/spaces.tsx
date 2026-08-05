@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -19,17 +20,11 @@ import { PeakCard } from '@/components/ui/PeakCard';
 import { PeakInput } from '@/components/ui/PeakInput';
 import { PeakColors } from '@/constants/colors';
 import { BorderRadius, Spacing, Typography } from '@/constants/theme';
+import { colorBackground, SPACE_COLOR_OPTIONS } from '@/lib/space-colors';
 import { supabase } from '@/lib/supabase';
 import type { Space } from '@/types/database';
 
 const DEFAULT_EMOJI = '✈️';
-
-const SPACE_COLOR_OPTIONS = [
-  { value: PeakColors.primary, background: PeakColors.primaryLight },
-  { value: PeakColors.aqua, background: PeakColors.aquaLight },
-  { value: PeakColors.pink, background: PeakColors.pinkLight },
-  { value: PeakColors.navy, background: '#E4E8F0' },
-] as const;
 
 type SpaceColorValue = (typeof SPACE_COLOR_OPTIONS)[number]['value'];
 
@@ -39,10 +34,6 @@ type NewSpaceForm = {
   emoji: string;
   color: SpaceColorValue;
 };
-
-function colorBackground(color: string): string {
-  return SPACE_COLOR_OPTIONS.find((option) => option.value === color)?.background ?? PeakColors.primaryLight;
-}
 
 type LoadState = 'loading' | 'success' | 'error';
 
@@ -141,7 +132,10 @@ export default function SpacesScreen() {
   };
 
   const renderSpaceCard = ({ item }: { item: Space }) => (
-    <PeakCard style={[styles.spaceCard, { backgroundColor: colorBackground(item.color) }]} padding="md">
+    <PeakCard
+      onPress={() => router.push(`/spaces/${item.id}`)}
+      style={[styles.spaceCard, { backgroundColor: colorBackground(item.color) }]}
+      padding="md">
       <Text style={styles.spaceEmoji}>{item.emoji}</Text>
       <Text style={styles.spaceName} numberOfLines={2}>
         {item.name}
