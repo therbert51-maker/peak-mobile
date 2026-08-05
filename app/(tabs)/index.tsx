@@ -1,98 +1,523 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { router } from 'expo-router';
+import { useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { useInspirationRefresh } from '@/hooks/use-inspiration-refresh';
+import { warnSpacesWithNullOwner } from '@/lib/spaces';
+import { supabase } from '@/lib/supabase';
+import type { Inspiration, Space } from '@/types/database';
+
+type InspirationListItem = Inspiration & {
+  spaces: Pick<Space, 'emoji' | 'name' | 'destination'> | null;
+};
+
+function formatDestination(destination: string | null): string {
+  return destination?.trim() ? destination.trim() : 'No destination yet';
+}
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const [spaces, setSpaces] = useState<Space[]>([]);
+  const [spacesLoading, setSpacesLoading] = useState(true);
+  const [inspiration, setInspiration] = useState<InspirationListItem[]>([]);
+  const [inspirationLoading, setInspirationLoading] = useState(true);
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  const fetchSpaces = useCallback(async () => {
+    setSpacesLoading(true);
+
+    const { data, error } = await supabase
+      .from('spaces')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error) {
+      const rows = data ?? [];
+      warnSpacesWithNullOwner(rows);
+      setSpaces(rows);
+    }
+
+    setSpacesLoading(false);
+  }, []);
+
+  const fetchInspiration = useCallback(async () => {
+    setInspirationLoading(true);
+
+    const { data, error } = await supabase
+      .from('inspiration')
+      .select('*, spaces ( emoji, name, destination )')
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (!error) {
+      setInspiration((data as InspirationListItem[] | null) ?? []);
+    }
+
+    setInspirationLoading(false);
+  }, []);
+
+  const refreshHome = useCallback(() => {
+    fetchSpaces();
+    fetchInspiration();
+  }, [fetchInspiration, fetchSpaces]);
+
+  useInspirationRefresh(refreshHome);
+
+  const goToSpaces = () => {
+    router.push('/spaces');
+  };
+
+  const goToSave = () => {
+    router.push('/save');
+  };
+
+  const inspirationSubtitle = (item: InspirationListItem) => {
+    if (item.spaces?.destination?.trim()) {
+      return item.spaces.destination.trim();
+    }
+    if (item.spaces?.name) {
+      return item.spaces.name;
+    }
+    if (item.notes?.trim()) {
+      return item.notes.trim();
+    }
+    return 'Saved inspiration';
+  };
+
+  return (
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.eyebrow}>PEAK</Text>
+          <Text style={styles.greeting}>Good evening, Ty</Text>
+        </View>
+
+        <TouchableOpacity style={styles.profileButton}>
+          <Text style={styles.profileText}>TH</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.hero}>
+        <Text style={styles.heroLabel}>YOUR NEXT ADVENTURE</Text>
+        <Text style={styles.heroTitle}>
+          Save the inspiration.{'\n'}Plan the trip.
+        </Text>
+        <Text style={styles.heroDescription}>
+          Keep every restaurant, beach, hotel and hidden gem in one place.
+        </Text>
+
+        <TouchableOpacity style={styles.primaryButton} onPress={goToSave}>
+          <Text style={styles.primaryButtonText}>＋ Save inspiration</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Your spaces</Text>
+        <TouchableOpacity onPress={goToSpaces}>
+          <Text style={styles.sectionAction}>See all</Text>
+        </TouchableOpacity>
+      </View>
+
+      {spacesLoading ? (
+        <View style={styles.spacesLoading}>
+          <ActivityIndicator size="small" color="#607068" />
+        </View>
+      ) : spaces.length === 0 ? (
+        <View style={styles.spacesEmpty}>
+          <Text style={styles.spacesEmptyEmoji}>🗺️</Text>
+          <Text style={styles.spacesEmptyTitle}>No spaces yet</Text>
+          <Text style={styles.spacesEmptyMessage}>
+            Start a collection for your next trip and save every place you want to visit.
+          </Text>
+          <TouchableOpacity style={styles.spacesEmptyButton} onPress={goToSpaces}>
+            <Text style={styles.spacesEmptyButtonText}>Create your first space</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.horizontalList}
+        >
+          {spaces.map((space) => (
+            <TouchableOpacity
+              key={space.id}
+              style={styles.spaceCard}
+              onPress={() => router.push(`/spaces/${space.id}`)}
+            >
+              <Text style={styles.spaceEmoji}>{space.emoji}</Text>
+              <Text style={styles.spaceTitle}>{space.name}</Text>
+              <Text style={styles.spaceSubtitle}>{formatDestination(space.destination)}</Text>
+            </TouchableOpacity>
+          ))}
+
+          <TouchableOpacity
+            style={[styles.spaceCard, styles.newSpaceCard]}
+            onPress={goToSpaces}
+          >
+            <Text style={styles.newSpaceIcon}>＋</Text>
+            <Text style={styles.newSpaceText}>New space</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      )}
+
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Recent inspiration</Text>
+        <TouchableOpacity>
+          <Text style={styles.sectionAction}>See all</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.inspirationList}>
+        {inspirationLoading ? (
+          <View style={styles.inspirationLoading}>
+            <ActivityIndicator size="small" color="#607068" />
+          </View>
+        ) : inspiration.length === 0 ? (
+          <View style={styles.inspirationEmpty}>
+            <Text style={styles.inspirationEmptyText}>
+              Save your first link or idea from the Save tab.
+            </Text>
+            <TouchableOpacity onPress={goToSave}>
+              <Text style={styles.sectionAction}>Save inspiration</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          inspiration.map((item) => (
+            <TouchableOpacity
+              key={item.id}
+              style={styles.inspirationCard}
+              onPress={() => router.push(`/spaces/${item.space_id}`)}
+            >
+              <View style={styles.inspirationImage}>
+                <Text style={styles.inspirationEmoji}>{item.spaces?.emoji ?? '✨'}</Text>
+              </View>
+
+              <View style={styles.inspirationDetails}>
+                <Text style={styles.inspirationTitle}>{item.title}</Text>
+                <Text style={styles.inspirationLocation}>{inspirationSubtitle(item)}</Text>
+              </View>
+
+              <Text style={styles.chevron}>›</Text>
+            </TouchableOpacity>
+          ))
+        )}
+      </View>
+
+      <View style={styles.splitCard}>
+        <View style={styles.splitIcon}>
+          <Text style={styles.splitEmoji}>🧾</Text>
+        </View>
+
+        <View style={styles.splitContent}>
+          <Text style={styles.splitLabel}>PEAK SPLIT</Text>
+          <Text style={styles.splitTitle}>Dinner math without the drama.</Text>
+          <Text style={styles.splitDescription}>
+            Scan a receipt, claim your items and see who owes what.
+          </Text>
+        </View>
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
+  screen: {
+    flex: 1,
+    backgroundColor: '#F6F5F1',
+  },
+  content: {
+    paddingTop: 68,
+    paddingBottom: 120,
+  },
+  header: {
+    paddingHorizontal: 22,
+    marginBottom: 24,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
   },
-  stepContainer: {
-    gap: 8,
+  eyebrow: {
+    marginBottom: 5,
+    color: '#DF603B',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 2.2,
+  },
+  greeting: {
+    color: '#171A17',
+    fontSize: 27,
+    fontWeight: '700',
+    letterSpacing: -0.7,
+  },
+  profileButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#171A17',
+  },
+  profileText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  hero: {
+    marginHorizontal: 18,
+    marginBottom: 34,
+    padding: 24,
+    borderRadius: 28,
+    backgroundColor: '#18392D',
+  },
+  heroLabel: {
+    marginBottom: 12,
+    color: '#BFD2C6',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.6,
+  },
+  heroTitle: {
+    color: '#FFFFFF',
+    fontSize: 34,
+    fontWeight: '700',
+    lineHeight: 39,
+    letterSpacing: -1.2,
+  },
+  heroDescription: {
+    maxWidth: 300,
+    marginTop: 14,
+    color: '#D7E2DB',
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  primaryButton: {
+    alignSelf: 'flex-start',
+    marginTop: 24,
+    paddingHorizontal: 17,
+    paddingVertical: 13,
+    borderRadius: 100,
+    backgroundColor: '#F4A36C',
+  },
+  primaryButtonText: {
+    color: '#18211D',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  sectionHeader: {
+    paddingHorizontal: 22,
+    marginBottom: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sectionTitle: {
+    color: '#171A17',
+    fontSize: 21,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+  },
+  sectionAction: {
+    color: '#607068',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  horizontalList: {
+    paddingHorizontal: 18,
+    paddingBottom: 35,
+    gap: 12,
+  },
+  spacesLoading: {
+    minHeight: 160,
+    marginBottom: 35,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  spacesEmpty: {
+    marginHorizontal: 18,
+    marginBottom: 35,
+    padding: 24,
+    borderRadius: 24,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  spacesEmptyEmoji: {
+    fontSize: 40,
+    marginBottom: 12,
+  },
+  spacesEmptyTitle: {
+    color: '#171A17',
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  spacesEmptyMessage: {
+    marginTop: 8,
+    color: '#7B817D',
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  spacesEmptyButton: {
+    marginTop: 18,
+    paddingHorizontal: 18,
+    paddingVertical: 13,
+    borderRadius: 100,
+    backgroundColor: '#F4A36C',
+  },
+  spacesEmptyButtonText: {
+    color: '#18211D',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  spaceCard: {
+    width: 155,
+    minHeight: 160,
+    padding: 18,
+    borderRadius: 24,
+    justifyContent: 'flex-end',
+    backgroundColor: '#FFFFFF',
+  },
+  spaceEmoji: {
+    marginBottom: 'auto',
+    fontSize: 34,
+  },
+  spaceTitle: {
+    color: '#171A17',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  spaceSubtitle: {
+    marginTop: 5,
+    color: '#7B817D',
+    fontSize: 13,
+  },
+  newSpaceCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#C8CBC8',
+    backgroundColor: 'transparent',
+  },
+  newSpaceIcon: {
     marginBottom: 8,
+    color: '#38413D',
+    fontSize: 31,
+    fontWeight: '300',
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  newSpaceText: {
+    color: '#38413D',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  inspirationList: {
+    paddingHorizontal: 18,
+    marginBottom: 32,
+    gap: 10,
+  },
+  inspirationLoading: {
+    paddingVertical: 24,
+    alignItems: 'center',
+  },
+  inspirationEmpty: {
+    padding: 20,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    gap: 10,
+  },
+  inspirationEmptyText: {
+    color: '#7B817D',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  inspirationCard: {
+    padding: 11,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  inspirationImage: {
+    width: 64,
+    height: 64,
+    marginRight: 14,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EEEDE7',
+  },
+  inspirationEmoji: {
+    fontSize: 31,
+  },
+  inspirationDetails: {
+    flex: 1,
+  },
+  inspirationTitle: {
+    color: '#171A17',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  inspirationLocation: {
+    marginTop: 5,
+    color: '#7B817D',
+    fontSize: 13,
+  },
+  chevron: {
+    paddingHorizontal: 8,
+    color: '#A1A6A2',
+    fontSize: 28,
+    fontWeight: '300',
+  },
+  splitCard: {
+    marginHorizontal: 18,
+    padding: 20,
+    borderRadius: 24,
+    flexDirection: 'row',
+    backgroundColor: '#EAD9CA',
+  },
+  splitIcon: {
+    width: 54,
+    height: 54,
+    marginRight: 15,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  splitEmoji: {
+    fontSize: 27,
+  },
+  splitContent: {
+    flex: 1,
+  },
+  splitLabel: {
+    marginBottom: 5,
+    color: '#9A4B32',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.4,
+  },
+  splitTitle: {
+    color: '#31241E',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  splitDescription: {
+    marginTop: 6,
+    color: '#6E5548',
+    fontSize: 13,
+    lineHeight: 19,
   },
 });
