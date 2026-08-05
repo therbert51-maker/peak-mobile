@@ -1,25 +1,17 @@
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { router } from 'expo-router';
+import { useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
-const spaces = [
-  {
-    id: '1',
-    emoji: '🇪🇸',
-    title: 'Spain 2026',
-    subtitle: '8 places saved',
-  },
-  {
-    id: '2',
-    emoji: '⛷️',
-    title: 'Ski Trips',
-    subtitle: '12 places saved',
-  },
-  {
-    id: '3',
-    emoji: '🍷',
-    title: 'Italy',
-    subtitle: '6 places saved',
-  },
-];
+import { supabase } from '@/lib/supabase';
+import type { Space } from '@/types/database';
 
 const inspiration = [
   {
@@ -42,7 +34,39 @@ const inspiration = [
   },
 ];
 
+function formatDestination(destination: string | null): string {
+  return destination?.trim() ? destination.trim() : 'No destination yet';
+}
+
 export default function HomeScreen() {
+  const [spaces, setSpaces] = useState<Space[]>([]);
+  const [spacesLoading, setSpacesLoading] = useState(true);
+
+  const fetchSpaces = useCallback(async () => {
+    setSpacesLoading(true);
+
+    const { data, error } = await supabase
+      .from('spaces')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error) {
+      setSpaces(data ?? []);
+    }
+
+    setSpacesLoading(false);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchSpaces();
+    }, [fetchSpaces]),
+  );
+
+  const goToSpaces = () => {
+    router.push('/spaces');
+  };
+
   return (
     <ScrollView
       style={styles.screen}
@@ -76,29 +100,49 @@ export default function HomeScreen() {
 
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Your spaces</Text>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={goToSpaces}>
           <Text style={styles.sectionAction}>See all</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.horizontalList}
-      >
-        {spaces.map((space) => (
-          <TouchableOpacity key={space.id} style={styles.spaceCard}>
-            <Text style={styles.spaceEmoji}>{space.emoji}</Text>
-            <Text style={styles.spaceTitle}>{space.title}</Text>
-            <Text style={styles.spaceSubtitle}>{space.subtitle}</Text>
+      {spacesLoading ? (
+        <View style={styles.spacesLoading}>
+          <ActivityIndicator size="small" color="#607068" />
+        </View>
+      ) : spaces.length === 0 ? (
+        <View style={styles.spacesEmpty}>
+          <Text style={styles.spacesEmptyEmoji}>🗺️</Text>
+          <Text style={styles.spacesEmptyTitle}>No spaces yet</Text>
+          <Text style={styles.spacesEmptyMessage}>
+            Start a collection for your next trip and save every place you want to visit.
+          </Text>
+          <TouchableOpacity style={styles.spacesEmptyButton} onPress={goToSpaces}>
+            <Text style={styles.spacesEmptyButtonText}>Create your first space</Text>
           </TouchableOpacity>
-        ))}
+        </View>
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.horizontalList}
+        >
+          {spaces.map((space) => (
+            <TouchableOpacity key={space.id} style={styles.spaceCard}>
+              <Text style={styles.spaceEmoji}>{space.emoji}</Text>
+              <Text style={styles.spaceTitle}>{space.name}</Text>
+              <Text style={styles.spaceSubtitle}>{formatDestination(space.destination)}</Text>
+            </TouchableOpacity>
+          ))}
 
-        <TouchableOpacity style={[styles.spaceCard, styles.newSpaceCard]}>
-          <Text style={styles.newSpaceIcon}>＋</Text>
-          <Text style={styles.newSpaceText}>New space</Text>
-        </TouchableOpacity>
-      </ScrollView>
+          <TouchableOpacity
+            style={[styles.spaceCard, styles.newSpaceCard]}
+            onPress={goToSpaces}
+          >
+            <Text style={styles.newSpaceIcon}>＋</Text>
+            <Text style={styles.newSpaceText}>New space</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      )}
 
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Recent inspiration</Text>
@@ -246,6 +290,49 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingBottom: 35,
     gap: 12,
+  },
+  spacesLoading: {
+    minHeight: 160,
+    marginBottom: 35,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  spacesEmpty: {
+    marginHorizontal: 18,
+    marginBottom: 35,
+    padding: 24,
+    borderRadius: 24,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  spacesEmptyEmoji: {
+    fontSize: 40,
+    marginBottom: 12,
+  },
+  spacesEmptyTitle: {
+    color: '#171A17',
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  spacesEmptyMessage: {
+    marginTop: 8,
+    color: '#7B817D',
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  spacesEmptyButton: {
+    marginTop: 18,
+    paddingHorizontal: 18,
+    paddingVertical: 13,
+    borderRadius: 100,
+    backgroundColor: '#F4A36C',
+  },
+  spacesEmptyButtonText: {
+    color: '#18211D',
+    fontSize: 14,
+    fontWeight: '700',
   },
   spaceCard: {
     width: 155,
