@@ -382,6 +382,28 @@ export default function SpaceDetailsScreen() {
           />
         ) : null}
 
+        <View style={styles.blockHeader}>
+          <Text style={styles.blockTitle}>Expenses</Text>
+        </View>
+
+        <PeakCard
+          padding="md"
+          style={styles.blockCard}
+          onPress={() => router.push(`/spaces/${spaceId}/expenses`)}>
+          <View style={styles.expensesPromoRow}>
+            <View style={styles.expensesIconWrap}>
+              <Ionicons name="wallet-outline" size={22} color={PeakColors.primary} />
+            </View>
+            <View style={styles.expensesPromoText}>
+              <Text style={styles.expensesPromoTitle}>Trip expenses</Text>
+              <Text style={styles.expensesPromoSubtitle}>
+                Track what your group spends and who paid.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color={PeakColors.textMuted} />
+          </View>
+        </PeakCard>
+
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Inspiration</Text>
           <PeakButton title="Save inspiration" onPress={openSaveWithSpace} />
@@ -611,6 +633,30 @@ const styles = StyleSheet.create({
   },
   inviteButton: {
     marginTop: Spacing.sm,
+  },
+  expensesPromoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  expensesIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.medium,
+    backgroundColor: PeakColors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  expensesPromoText: {
+    flex: 1,
+  },
+  expensesPromoTitle: {
+    ...Typography.label,
+  },
+  expensesPromoSubtitle: {
+    ...Typography.caption,
+    color: PeakColors.textSecondary,
+    marginTop: 2,
   },
   sectionHeader: {
     flexDirection: 'row',
