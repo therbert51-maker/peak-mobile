@@ -12,6 +12,25 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
+export type ExpenseReceiptStatus =
+  | 'manual'
+  | 'uploaded'
+  | 'processing'
+  | 'needs_review'
+  | 'ready'
+  | 'failed';
+
+export type ExpenseShareType = 'equal' | 'quantity' | 'percentage' | 'fixed';
+
+export type SettlementStatus = 'pending' | 'paid' | 'cancelled';
+
+export type ReceiptProcessingJobStatus =
+  | 'queued'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
 export type Database = {
   public: {
     Tables: {
@@ -200,6 +219,348 @@ export type Database = {
           },
         ];
       };
+      expenses: {
+        Row: {
+          id: string;
+          space_id: string;
+          created_by: string;
+          paid_by: string | null;
+          merchant_name: string | null;
+          expense_title: string;
+          expense_date: string | null;
+          original_currency: string;
+          display_currency: string | null;
+          subtotal: number | null;
+          tax: number;
+          tip: number;
+          fees: number;
+          discount: number;
+          total: number;
+          exchange_rate: number | null;
+          exchange_rate_date: string | null;
+          receipt_image_path: string | null;
+          receipt_status: ExpenseReceiptStatus;
+          processing_error: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          space_id: string;
+          created_by: string;
+          paid_by?: string | null;
+          merchant_name?: string | null;
+          expense_title: string;
+          expense_date?: string | null;
+          original_currency?: string;
+          display_currency?: string | null;
+          subtotal?: number | null;
+          tax?: number;
+          tip?: number;
+          fees?: number;
+          discount?: number;
+          total: number;
+          exchange_rate?: number | null;
+          exchange_rate_date?: string | null;
+          receipt_image_path?: string | null;
+          receipt_status?: ExpenseReceiptStatus;
+          processing_error?: string | null;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          space_id?: string;
+          created_by?: string;
+          paid_by?: string | null;
+          merchant_name?: string | null;
+          expense_title?: string;
+          expense_date?: string | null;
+          original_currency?: string;
+          display_currency?: string | null;
+          subtotal?: number | null;
+          tax?: number;
+          tip?: number;
+          fees?: number;
+          discount?: number;
+          total?: number;
+          exchange_rate?: number | null;
+          exchange_rate_date?: string | null;
+          receipt_image_path?: string | null;
+          receipt_status?: ExpenseReceiptStatus;
+          processing_error?: string | null;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'expenses_space_id_fkey';
+            columns: ['space_id'];
+            isOneToOne: false;
+            referencedRelation: 'spaces';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      expense_items: {
+        Row: {
+          id: string;
+          expense_id: string;
+          name: string;
+          quantity: number;
+          unit_price: number | null;
+          line_total: number;
+          category: string | null;
+          sort_order: number;
+          source_text: string | null;
+          confidence: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          expense_id: string;
+          name: string;
+          quantity?: number;
+          unit_price?: number | null;
+          line_total: number;
+          category?: string | null;
+          sort_order?: number;
+          source_text?: string | null;
+          confidence?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          expense_id?: string;
+          name?: string;
+          quantity?: number;
+          unit_price?: number | null;
+          line_total?: number;
+          category?: string | null;
+          sort_order?: number;
+          source_text?: string | null;
+          confidence?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'expense_items_expense_id_fkey';
+            columns: ['expense_id'];
+            isOneToOne: false;
+            referencedRelation: 'expenses';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      expense_item_assignments: {
+        Row: {
+          id: string;
+          expense_item_id: string;
+          user_id: string;
+          share_type: ExpenseShareType;
+          share_value: number;
+          assigned_amount: number | null;
+          claimed_by_user: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          expense_item_id: string;
+          user_id: string;
+          share_type?: ExpenseShareType;
+          share_value?: number;
+          assigned_amount?: number | null;
+          claimed_by_user?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          expense_item_id?: string;
+          user_id?: string;
+          share_type?: ExpenseShareType;
+          share_value?: number;
+          assigned_amount?: number | null;
+          claimed_by_user?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'expense_item_assignments_expense_item_id_fkey';
+            columns: ['expense_item_id'];
+            isOneToOne: false;
+            referencedRelation: 'expense_items';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      expense_participants: {
+        Row: {
+          id: string;
+          expense_id: string;
+          user_id: string;
+          tax_share: number;
+          tip_share: number;
+          fee_share: number;
+          discount_share: number;
+          total_owed: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          expense_id: string;
+          user_id: string;
+          tax_share?: number;
+          tip_share?: number;
+          fee_share?: number;
+          discount_share?: number;
+          total_owed?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          expense_id?: string;
+          user_id?: string;
+          tax_share?: number;
+          tip_share?: number;
+          fee_share?: number;
+          discount_share?: number;
+          total_owed?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'expense_participants_expense_id_fkey';
+            columns: ['expense_id'];
+            isOneToOne: false;
+            referencedRelation: 'expenses';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      settlements: {
+        Row: {
+          id: string;
+          space_id: string;
+          from_user_id: string;
+          to_user_id: string;
+          amount: number;
+          currency: string;
+          status: SettlementStatus;
+          payment_method: string | null;
+          external_reference: string | null;
+          note: string | null;
+          created_by: string;
+          settled_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          space_id: string;
+          from_user_id: string;
+          to_user_id: string;
+          amount: number;
+          currency: string;
+          status?: SettlementStatus;
+          payment_method?: string | null;
+          external_reference?: string | null;
+          note?: string | null;
+          created_by: string;
+          settled_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          space_id?: string;
+          from_user_id?: string;
+          to_user_id?: string;
+          amount?: number;
+          currency?: string;
+          status?: SettlementStatus;
+          payment_method?: string | null;
+          external_reference?: string | null;
+          note?: string | null;
+          created_by?: string;
+          settled_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'settlements_space_id_fkey';
+            columns: ['space_id'];
+            isOneToOne: false;
+            referencedRelation: 'spaces';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      receipt_processing_jobs: {
+        Row: {
+          id: string;
+          expense_id: string;
+          requested_by: string;
+          status: ReceiptProcessingJobStatus;
+          provider: string | null;
+          model: string | null;
+          attempt_count: number;
+          extracted_payload: Json | null;
+          error_message: string | null;
+          started_at: string | null;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          expense_id: string;
+          requested_by: string;
+          status?: ReceiptProcessingJobStatus;
+          provider?: string | null;
+          model?: string | null;
+          attempt_count?: number;
+          extracted_payload?: Json | null;
+          error_message?: string | null;
+          started_at?: string | null;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          expense_id?: string;
+          requested_by?: string;
+          status?: ReceiptProcessingJobStatus;
+          provider?: string | null;
+          model?: string | null;
+          attempt_count?: number;
+          extracted_payload?: Json | null;
+          error_message?: string | null;
+          started_at?: string | null;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'receipt_processing_jobs_expense_id_fkey';
+            columns: ['expense_id'];
+            isOneToOne: true;
+            referencedRelation: 'expenses';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       places: {
         Row: {
           id: string;
@@ -281,5 +642,31 @@ export type InspirationInsert = Database['public']['Tables']['inspiration']['Ins
 export type ItineraryItem = Database['public']['Tables']['itinerary_items']['Row'];
 export type ItineraryItemInsert = Database['public']['Tables']['itinerary_items']['Insert'];
 export type ItineraryItemUpdate = Database['public']['Tables']['itinerary_items']['Update'];
+export type Expense = Database['public']['Tables']['expenses']['Row'];
+export type ExpenseInsert = Database['public']['Tables']['expenses']['Insert'];
+export type ExpenseUpdate = Database['public']['Tables']['expenses']['Update'];
+export type ExpenseItem = Database['public']['Tables']['expense_items']['Row'];
+export type ExpenseItemInsert = Database['public']['Tables']['expense_items']['Insert'];
+export type ExpenseItemUpdate = Database['public']['Tables']['expense_items']['Update'];
+export type ExpenseItemAssignment =
+  Database['public']['Tables']['expense_item_assignments']['Row'];
+export type ExpenseItemAssignmentInsert =
+  Database['public']['Tables']['expense_item_assignments']['Insert'];
+export type ExpenseItemAssignmentUpdate =
+  Database['public']['Tables']['expense_item_assignments']['Update'];
+export type ExpenseParticipant = Database['public']['Tables']['expense_participants']['Row'];
+export type ExpenseParticipantInsert =
+  Database['public']['Tables']['expense_participants']['Insert'];
+export type ExpenseParticipantUpdate =
+  Database['public']['Tables']['expense_participants']['Update'];
+export type Settlement = Database['public']['Tables']['settlements']['Row'];
+export type SettlementInsert = Database['public']['Tables']['settlements']['Insert'];
+export type SettlementUpdate = Database['public']['Tables']['settlements']['Update'];
+export type ReceiptProcessingJob =
+  Database['public']['Tables']['receipt_processing_jobs']['Row'];
+export type ReceiptProcessingJobInsert =
+  Database['public']['Tables']['receipt_processing_jobs']['Insert'];
+export type ReceiptProcessingJobUpdate =
+  Database['public']['Tables']['receipt_processing_jobs']['Update'];
 export type Place = Database['public']['Tables']['places']['Row'];
 export type SavedPlace = Database['public']['Tables']['saved_places']['Row'];
