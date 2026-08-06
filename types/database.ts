@@ -141,6 +141,65 @@ export type Database = {
         };
         Relationships: [];
       };
+      itinerary_items: {
+        Row: {
+          id: string;
+          space_id: string;
+          created_by: string;
+          title: string;
+          description: string | null;
+          location: string | null;
+          event_date: string;
+          start_time: string | null;
+          end_time: string | null;
+          category: string;
+          status: string;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          space_id: string;
+          created_by: string;
+          title: string;
+          description?: string | null;
+          location?: string | null;
+          event_date: string;
+          start_time?: string | null;
+          end_time?: string | null;
+          category?: string;
+          status?: string;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          space_id?: string;
+          created_by?: string;
+          title?: string;
+          description?: string | null;
+          location?: string | null;
+          event_date?: string;
+          start_time?: string | null;
+          end_time?: string | null;
+          category?: string;
+          status?: string;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'itinerary_items_space_id_fkey';
+            columns: ['space_id'];
+            isOneToOne: false;
+            referencedRelation: 'spaces';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       places: {
         Row: {
           id: string;
@@ -219,5 +278,8 @@ export type SpaceMember = Database['public']['Tables']['space_members']['Row'];
 export type SpaceMemberInsert = Database['public']['Tables']['space_members']['Insert'];
 export type Inspiration = Database['public']['Tables']['inspiration']['Row'];
 export type InspirationInsert = Database['public']['Tables']['inspiration']['Insert'];
+export type ItineraryItem = Database['public']['Tables']['itinerary_items']['Row'];
+export type ItineraryItemInsert = Database['public']['Tables']['itinerary_items']['Insert'];
+export type ItineraryItemUpdate = Database['public']['Tables']['itinerary_items']['Update'];
 export type Place = Database['public']['Tables']['places']['Row'];
 export type SavedPlace = Database['public']['Tables']['saved_places']['Row'];

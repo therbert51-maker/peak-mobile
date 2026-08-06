@@ -18,6 +18,7 @@ import {
   tripFormFromSpace,
   type TripEditForm,
 } from '@/components/spaces/EditTripModal';
+import { ItinerarySection } from '@/components/itinerary/ItinerarySection';
 import { PeakButton } from '@/components/ui/PeakButton';
 import { PeakCard } from '@/components/ui/PeakCard';
 import { useAuth } from '@/contexts/auth-provider';
@@ -372,6 +373,14 @@ export default function SpaceDetailsScreen() {
             style={styles.inviteButton}
           />
         </PeakCard>
+
+        {spaceId ? (
+          <ItinerarySection
+            spaceId={spaceId}
+            spaceOwnerId={space.owner_id}
+            userId={user?.id}
+          />
+        ) : null}
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Inspiration</Text>
