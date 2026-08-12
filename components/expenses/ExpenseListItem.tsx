@@ -10,6 +10,7 @@ import { tripMemberDisplayName, type TripMember } from '@/lib/trip-members';
 type ExpenseListItemProps = {
   expense: ManualExpense;
   membersById: Map<string, TripMember>;
+  onPress?: () => void;
 };
 
 function formatExpenseDate(iso: string): string {
@@ -24,12 +25,17 @@ function formatExpenseDate(iso: string): string {
   }
 }
 
-export function ExpenseListItem({ expense, membersById }: ExpenseListItemProps) {
+export function ExpenseListItem({ expense, membersById, onPress }: ExpenseListItemProps) {
   const payer = expense.paidBy ? membersById.get(expense.paidBy) : null;
   const paidByLabel = payer ? tripMemberDisplayName(payer) : 'Unknown';
 
+  const statusLabel =
+    expense.receiptStatus && expense.receiptStatus !== 'manual' && expense.receiptStatus !== 'ready'
+      ? expense.receiptStatus.replace('_', ' ')
+      : null;
+
   return (
-    <PeakCard padding="md" style={styles.card}>
+    <PeakCard padding="md" style={styles.card} onPress={onPress}>
       <View style={styles.row}>
         <View style={styles.iconWrap}>
           <Ionicons name="receipt-outline" size={22} color={PeakColors.primary} />
@@ -40,6 +46,7 @@ export function ExpenseListItem({ expense, membersById }: ExpenseListItemProps) 
           </Text>
           <Text style={styles.meta}>
             Paid by {paidByLabel} · {formatExpenseDate(expense.createdAt)}
+            {statusLabel ? ` · ${statusLabel}` : ''}
           </Text>
         </View>
         <Text style={styles.amount}>{formatExpenseAmount(expense.amount, expense.currency)}</Text>

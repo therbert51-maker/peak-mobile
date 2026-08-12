@@ -12,6 +12,7 @@ export type ManualExpense = {
   paidBy: string | null;
   createdBy: string;
   createdAt: string;
+  receiptStatus?: string;
 };
 
 export type CreateManualExpenseInput = {
@@ -50,6 +51,7 @@ export function expenseRowToManual(row: Expense): ManualExpense {
     paidBy: row.paid_by,
     createdBy: row.created_by,
     createdAt: row.created_at,
+    receiptStatus: row.receipt_status,
   };
 }
 
@@ -126,7 +128,7 @@ export async function fetchManualExpensesForSpace(spaceId: string): Promise<{
   const { data, error } = await supabase
     .from('expenses')
     .select(
-      'id, space_id, expense_title, total, original_currency, paid_by, created_by, created_at',
+      'id, space_id, expense_title, total, original_currency, paid_by, created_by, created_at, receipt_status',
     )
     .eq('space_id', spaceId)
     .order('created_at', { ascending: false });

@@ -17,6 +17,7 @@ import {
   emptyAddExpenseForm,
   type AddExpenseFormState,
 } from '@/components/expenses/AddExpenseModal';
+import { AddExpenseChooserModal } from '@/components/expenses/AddExpenseChooserModal';
 import { ExpenseListItem } from '@/components/expenses/ExpenseListItem';
 import { ExpensesEmptyState } from '@/components/expenses/ExpensesEmptyState';
 import { PeakButton } from '@/components/ui/PeakButton';
@@ -46,6 +47,7 @@ export default function SpaceExpensesScreen() {
     refresh: refreshMembers,
   } = useTripMembers(spaceId, space?.owner_id);
 
+  const [chooserVisible, setChooserVisible] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [form, setForm] = useState<AddExpenseFormState>(() => emptyAddExpenseForm(user?.id ?? null));
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -80,11 +82,25 @@ export default function SpaceExpensesScreen() {
     void loadSpace();
   }, [loadSpace]);
 
-  const openAddModal = () => {
+  const openAddFlow = () => {
     void refreshMembers();
+    setChooserVisible(true);
+  };
+
+  const openManualModal = () => {
+    setChooserVisible(false);
     setForm(emptyAddExpenseForm(user?.id ?? members[0]?.userId ?? null));
     setSaveError(null);
     setModalVisible(true);
+  };
+
+  const openScan = (source: 'camera' | 'library') => {
+    if (!spaceId) return;
+    setChooserVisible(false);
+    router.push({
+      pathname: '/spaces/[id]/expenses/scan',
+      params: { id: spaceId, source },
+    });
   };
 
   useEffect(() => {
@@ -213,7 +229,31 @@ export default function SpaceExpensesScreen() {
             ) : null
           }
           renderItem={({ item }) => (
-            <ExpenseListItem expense={item} membersById={membersById} />
+            <ExpenseListItem
+              expense={item}
+              membersById={membersById}
+              onPress={() => {
+                const status = item.receiptStatus;
+                if (status === 'processing' || status === 'uploaded') {
+                  router.push({
+                    pathname: '/spaces/[id]/expenses/processing',
+                    params: { id: spaceId, expenseId: item.id },
+                  });
+                  return;
+                }
+                if (status === 'needs_review' || status === 'failed') {
+                  router.push({
+                    pathname: '/spaces/[id]/expenses/[expenseId]/review',
+                    params: { id: spaceId, expenseId: item.id },
+                  });
+                  return;
+                }
+                router.push({
+                  pathname: '/spaces/[id]/expenses/[expenseId]',
+                  params: { id: spaceId, expenseId: item.id },
+                });
+              }}
+            />
           )}
         />
       )}
@@ -222,9 +262,17 @@ export default function SpaceExpensesScreen() {
         accessibilityRole="button"
         accessibilityLabel="Add expense"
         style={styles.fab}
-        onPress={openAddModal}>
+        onPress={openAddFlow}>
         <Ionicons name="add" size={28} color={PeakColors.textInverse} />
       </Pressable>
+
+      <AddExpenseChooserModal
+        visible={chooserVisible}
+        onClose={() => setChooserVisible(false)}
+        onScanReceipt={() => openScan('camera')}
+        onChoosePhoto={() => openScan('library')}
+        onEnterManually={openManualModal}
+      />
 
       <AddExpenseModal
         visible={modalVisible}
