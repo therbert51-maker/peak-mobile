@@ -16,26 +16,21 @@ export function buildReceiptStoragePath(userId: string, spaceId: string, fileNam
   return `${userId}/${spaceId}/${safeName}`;
 }
 
-export function receiptFileNameFromUri(uri: string): string {
-  const extMatch = uri.match(/\.([a-zA-Z0-9]+)(?:\?|$)/);
-  const ext = extMatch?.[1]?.toLowerCase() ?? 'jpg';
+export function receiptFileName(): string {
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  return `receipt-${id}.${ext}`;
+  return `receipt-${id}.jpg`;
 }
 
-export function mimeTypeForReceiptFileName(fileName: string): string {
-  const ext = fileName.split('.').pop()?.toLowerCase();
-  switch (ext) {
-    case 'png':
-      return 'image/png';
-    case 'webp':
-      return 'image/webp';
-    case 'heic':
-    case 'heif':
-      return 'image/heic';
-    default:
-      return 'image/jpeg';
+function decodeBase64Image(base64: string): ArrayBuffer {
+  const payload = base64.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '').replace(/\s/g, '');
+  const binary = atob(payload);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
   }
+
+  return bytes.buffer;
 }
 
 async function formatFunctionInvokeError(error: unknown): Promise<string> {
@@ -102,15 +97,26 @@ export async function markReceiptProcessingFailed(
 export async function uploadReceiptImage(input: {
   userId: string;
   spaceId: string;
-  localUri: string;
+  jpegBase64: string;
 }): Promise<{ path: string | null; error: string | null }> {
-  const fileName = receiptFileNameFromUri(input.localUri);
+  const fileName = receiptFileName();
   const path = buildReceiptStoragePath(input.userId, input.spaceId, fileName);
-  const contentType = mimeTypeForReceiptFileName(fileName);
+  const contentType = 'image/jpeg';
 
   try {
-    const response = await fetch(input.localUri);
-    const arrayBuffer = await response.arrayBuffer();
+    const arrayBuffer = decodeBase64Image(input.jpegBase64);
+    const bytes = new Uint8Array(arrayBuffer);
+
+    if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) {
+      return { path: null, error: 'The selected receipt is not a valid JPEG image.' };
+    }
+
+    console.log('[receipt-upload] Uploading normalized image', {
+      path,
+      mimeType: contentType,
+      byteSize: bytes.length,
+      transport: 'expo-picker-jpeg-base64-to-storage-bytes',
+    });
 
     const { error } = await supabase.storage.from(RECEIPT_BUCKET).upload(path, arrayBuffer, {
       contentType,
@@ -312,4 +318,82 @@ export async function signedReceiptImageUrl(path: string): Promise<string | null
   const { data, error } = await supabase.storage.from(RECEIPT_BUCKET).createSignedUrl(path, 3600);
   if (error || !data?.signedUrl) return null;
   return data.signedUrl;
+}
+
+export async function deleteExpenseAndReceipt(
+  expenseId: string,
+): Promise<{ ok: boolean; error: string | null; cleanupWarning: string | null }> {
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    return {
+      ok: false,
+      error: 'You must be signed in to delete an expense.',
+      cleanupWarning: null,
+    };
+  }
+
+  const { data: expense, error: fetchError } = await supabase
+    .from('expenses')
+    .select('id, created_by, receipt_image_path')
+    .eq('id', expenseId)
+    .maybeSingle();
+
+  if (fetchError || !expense) {
+    return {
+      ok: false,
+      error: fetchError?.message ?? 'Expense not found or access denied.',
+      cleanupWarning: null,
+    };
+  }
+
+  if (expense.created_by !== user.id) {
+    return {
+      ok: false,
+      error: 'Only the person who created this expense can delete it.',
+      cleanupWarning: null,
+    };
+  }
+
+  const { data: deleted, error: deleteError } = await supabase
+    .from('expenses')
+    .delete()
+    .eq('id', expenseId)
+    .eq('created_by', user.id)
+    .select('id')
+    .maybeSingle();
+
+  if (deleteError || !deleted) {
+    return {
+      ok: false,
+      error: deleteError?.message ?? 'You do not have permission to delete this expense.',
+      cleanupWarning: null,
+    };
+  }
+
+  if (!expense.receipt_image_path) {
+    return { ok: true, error: null, cleanupWarning: null };
+  }
+
+  const { error: storageError } = await supabase.storage
+    .from(RECEIPT_BUCKET)
+    .remove([expense.receipt_image_path]);
+
+  if (storageError) {
+    console.error('[expense-delete] Receipt image cleanup failed', {
+      expenseId,
+      receiptPath: expense.receipt_image_path,
+      message: storageError.message,
+    });
+    return {
+      ok: true,
+      error: null,
+      cleanupWarning: 'The expense was deleted, but its receipt image could not be cleaned up.',
+    };
+  }
+
+  return { ok: true, error: null, cleanupWarning: null };
 }

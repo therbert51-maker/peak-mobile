@@ -6,6 +6,7 @@ import { BorderRadius, Shadows, Spacing } from '@/constants/theme';
 export type PeakCardProps = {
   children: React.ReactNode;
   onPress?: () => void;
+  onLongPress?: () => void;
   style?: StyleProp<ViewStyle>;
   elevated?: boolean;
   padding?: keyof typeof Spacing;
@@ -14,6 +15,7 @@ export type PeakCardProps = {
 export function PeakCard({
   children,
   onPress,
+  onLongPress,
   style,
   elevated = true,
   padding = 'md',
@@ -25,11 +27,13 @@ export function PeakCard({
     style,
   ];
 
-  if (onPress) {
+  if (onPress || onLongPress) {
     return (
       <Pressable
         accessibilityRole="button"
         onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={400}
         style={({ pressed }) => [cardStyle, pressed && styles.pressed]}>
         {children}
       </Pressable>

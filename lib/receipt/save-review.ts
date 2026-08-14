@@ -21,11 +21,14 @@ export type ReviewSaveInput = {
     unit_price: number | null;
     line_total: number;
     sort_order: number;
+    category: string | null;
+    source_text: string | null;
+    confidence: number | null;
   }[];
 };
 
 export async function saveReceiptReview(input: ReviewSaveInput): Promise<{ ok: boolean; error: string | null }> {
-  const { error: expenseError } = await supabase
+  const { data: updatedExpense, error: expenseError } = await supabase
     .from('expenses')
     .update({
       merchant_name: input.merchantName,
@@ -42,10 +45,15 @@ export async function saveReceiptReview(input: ReviewSaveInput): Promise<{ ok: b
       receipt_status: 'ready',
       processing_error: null,
     })
-    .eq('id', input.expenseId);
+    .eq('id', input.expenseId)
+    .select('id')
+    .maybeSingle();
 
-  if (expenseError) {
-    return { ok: false, error: expenseError.message };
+  if (expenseError || !updatedExpense) {
+    return {
+      ok: false,
+      error: expenseError?.message ?? 'You do not have permission to edit this expense.',
+    };
   }
 
   const { error: deleteError } = await supabase
@@ -65,6 +73,9 @@ export async function saveReceiptReview(input: ReviewSaveInput): Promise<{ ok: b
       unit_price: item.unit_price,
       line_total: item.line_total,
       sort_order: item.sort_order,
+      category: item.category,
+      source_text: item.source_text,
+      confidence: item.confidence,
     }));
 
     const { error: insertError } = await supabase.from('expense_items').insert(rows);

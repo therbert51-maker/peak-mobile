@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -10,6 +12,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -18,12 +21,21 @@ import {
   type AddExpenseFormState,
 } from '@/components/expenses/AddExpenseModal';
 import { AddExpenseChooserModal } from '@/components/expenses/AddExpenseChooserModal';
-import { ExpenseListItem } from '@/components/expenses/ExpenseListItem';
+import { SwipeableExpenseListItem } from '@/components/expenses/SwipeableExpenseListItem';
+import { ExpenseSummarySection } from '@/components/expenses/ExpenseSummarySection';
 import { ExpensesEmptyState } from '@/components/expenses/ExpensesEmptyState';
 import { PeakButton } from '@/components/ui/PeakButton';
 import { useAuth } from '@/contexts/auth-provider';
 import { PeakColors } from '@/constants/colors';
 import { BorderRadius, Spacing, Typography } from '@/constants/theme';
+import {
+  canManageExpense,
+  expenseEditRoute,
+  expenseOpenRoute,
+  navigateBackFromExpenses,
+  parseExpensesEntryFrom,
+} from '@/lib/expense-routes';
+import { computeExpenseSummary } from '@/lib/expense-summary';
 import { useSpaceExpenses } from '@/hooks/use-space-expenses';
 import { useTripMembers } from '@/hooks/use-trip-members';
 import { validateManualExpenseInput } from '@/lib/expenses';
@@ -32,14 +44,20 @@ import type { Space } from '@/types/database';
 
 export default function SpaceExpensesScreen() {
   const { user } = useAuth();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, from } = useLocalSearchParams<{ id: string; from?: string | string[] }>();
   const spaceId = Array.isArray(id) ? id[0] : id;
+  const entryFrom = parseExpensesEntryFrom(from);
+
+  const handleBack = useCallback(() => {
+    navigateBackFromExpenses({ spaceId, from: entryFrom });
+  }, [entryFrom, spaceId]);
 
   const [space, setSpace] = useState<Space | null>(null);
   const [spaceLoading, setSpaceLoading] = useState(true);
   const [spaceError, setSpaceError] = useState<string | null>(null);
 
-  const { expenses, loadState, errorMessage, refresh, addExpense } = useSpaceExpenses(spaceId);
+  const { expenses, loadState, errorMessage, refresh, addExpense, removeExpense } =
+    useSpaceExpenses(spaceId);
   const {
     members,
     loadState: membersLoadState,
@@ -52,8 +70,21 @@ export default function SpaceExpensesScreen() {
   const [form, setForm] = useState<AddExpenseFormState>(() => emptyAddExpenseForm(user?.id ?? null));
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [listActionError, setListActionError] = useState<string | null>(null);
+
+  const openSwipeableRef = useRef<Swipeable | null>(null);
 
   const membersById = useMemo(() => new Map(members.map((m) => [m.userId, m])), [members]);
+  const expenseSummary = useMemo(
+    () => computeExpenseSummary(expenses, members),
+    [expenses, members],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      void refresh();
+    }, [refresh]),
+  );
 
   const loadSpace = useCallback(async () => {
     if (!spaceId) {
@@ -157,6 +188,20 @@ export default function SpaceExpensesScreen() {
     setModalVisible(false);
   };
 
+  const handleDeleteExpense = async (expenseId: string) => {
+    setListActionError(null);
+    const result = await removeExpense(expenseId);
+
+    if (!result.ok) {
+      setListActionError(result.error ?? 'Could not delete this expense.');
+      return;
+    }
+
+    if (result.cleanupWarning) {
+      Alert.alert('Expense deleted', result.cleanupWarning);
+    }
+  };
+
   const isLoading = spaceLoading || (loadState === 'loading' && expenses.length === 0);
   const listError = spaceError ?? errorMessage;
 
@@ -165,7 +210,7 @@ export default function SpaceExpensesScreen() {
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.centered}>
           <Text style={styles.errorText}>Trip not found.</Text>
-          <PeakButton title="Go back" onPress={() => router.back()} />
+          <PeakButton title="Go back" onPress={handleBack} />
         </View>
       </SafeAreaView>
     );
@@ -174,7 +219,7 @@ export default function SpaceExpensesScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.topBar}>
-        <Pressable accessibilityRole="button" hitSlop={12} onPress={() => router.back()}>
+        <Pressable accessibilityRole="button" hitSlop={12} onPress={handleBack}>
           <Ionicons name="arrow-back" size={24} color={PeakColors.textPrimary} />
         </Pressable>
         <View style={styles.topBarCenter}>
@@ -209,53 +254,53 @@ export default function SpaceExpensesScreen() {
       ) : expenses.length === 0 ? (
         <ExpensesEmptyState />
       ) : (
-        <FlatList
-          data={expenses}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={loadState === 'loading' && expenses.length > 0}
-              onRefresh={refresh}
-              tintColor={PeakColors.primary}
-            />
-          }
-          ListHeaderComponent={
-            listError ? (
-              <View style={styles.inlineError}>
-                <Text style={styles.errorText}>{listError}</Text>
-                <PeakButton title="Retry" variant="outline" onPress={refresh} />
-              </View>
-            ) : null
-          }
-          renderItem={({ item }) => (
-            <ExpenseListItem
-              expense={item}
-              membersById={membersById}
-              onPress={() => {
-                const status = item.receiptStatus;
-                if (status === 'processing' || status === 'uploaded') {
-                  router.push({
-                    pathname: '/spaces/[id]/expenses/processing',
-                    params: { id: spaceId, expenseId: item.id },
-                  });
-                  return;
-                }
-                if (status === 'needs_review' || status === 'failed') {
-                  router.push({
-                    pathname: '/spaces/[id]/expenses/[expenseId]/review',
-                    params: { id: spaceId, expenseId: item.id },
-                  });
-                  return;
-                }
-                router.push({
-                  pathname: '/spaces/[id]/expenses/[expenseId]',
-                  params: { id: spaceId, expenseId: item.id },
-                });
-              }}
-            />
-          )}
-        />
+        <GestureHandlerRootView style={styles.listRoot}>
+          <FlatList
+            data={expenses}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={loadState === 'loading' && expenses.length > 0}
+                onRefresh={refresh}
+                tintColor={PeakColors.primary}
+              />
+            }
+            ListHeaderComponent={
+              <>
+                <ExpenseSummarySection summary={expenseSummary} />
+                {listError || listActionError ? (
+                  <View style={styles.inlineError}>
+                    <Text style={styles.errorText}>{listActionError ?? listError}</Text>
+                    {listError ? (
+                      <PeakButton title="Retry" variant="outline" onPress={refresh} />
+                    ) : null}
+                  </View>
+                ) : null}
+              </>
+            }
+            renderItem={({ item }) => {
+              const manageable = canManageExpense(item, user?.id);
+
+              return (
+                <SwipeableExpenseListItem
+                  expense={item}
+                  membersById={membersById}
+                  canManage={manageable}
+                  onOpen={() => router.push(expenseOpenRoute(spaceId, item))}
+                  onEdit={() => router.push(expenseEditRoute(spaceId, item))}
+                  onDelete={() => void handleDeleteExpense(item.id)}
+                  onSwipeableOpen={(ref) => {
+                    if (openSwipeableRef.current && openSwipeableRef.current !== ref) {
+                      openSwipeableRef.current.close();
+                    }
+                    openSwipeableRef.current = ref;
+                  }}
+                />
+              );
+            }}
+          />
+        </GestureHandlerRootView>
       )}
 
       <Pressable
@@ -322,6 +367,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: Spacing.xl,
+  },
+  listRoot: {
+    flex: 1,
   },
   listContent: {
     paddingHorizontal: Spacing.lg,

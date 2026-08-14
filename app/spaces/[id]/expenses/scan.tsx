@@ -38,6 +38,7 @@ export default function ReceiptScanScreen() {
   const { members, loadState: membersLoadState } = useTripMembers(spaceId, ownerId);
 
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [paidByUserId, setPaidByUserId] = useState<string | null>(null);
   const [displayCurrency, setDisplayCurrency] = useState(DEFAULT_EXPENSE_CURRENCY);
   const [busy, setBusy] = useState(false);
@@ -70,7 +71,10 @@ export default function ReceiptScanScreen() {
       return;
     }
     if (result.cancelled) return;
-    if (result.uri) setImageUri(result.uri);
+    if (result.uri && result.base64) {
+      setImageUri(result.uri);
+      setImageBase64(result.base64);
+    }
   }, [pickSource]);
 
   useEffect(() => {
@@ -79,11 +83,12 @@ export default function ReceiptScanScreen() {
 
   const handleRetake = async () => {
     setImageUri(null);
+    setImageBase64(null);
     await pickImage();
   };
 
   const startScan = async () => {
-    if (!spaceId || !user?.id || !imageUri || !paidByUserId) {
+    if (!spaceId || !user?.id || !imageUri || !imageBase64 || !paidByUserId) {
       setErrorMessage('Choose who paid and add a receipt photo before continuing.');
       return;
     }
@@ -95,7 +100,7 @@ export default function ReceiptScanScreen() {
     const upload = await uploadReceiptImage({
       userId: user.id,
       spaceId,
-      localUri: imageUri,
+      jpegBase64: imageBase64,
     });
 
     if (!upload.path) {

@@ -15,19 +15,21 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PeakButton } from '@/components/ui/PeakButton';
 import { PeakInput } from '@/components/ui/PeakInput';
+import { ReceiptImageViewer } from '@/components/expenses/ReceiptImageViewer';
+import { useAuth } from '@/contexts/auth-provider';
 import { PeakColors } from '@/constants/colors';
 import { BorderRadius, Spacing, Typography } from '@/constants/theme';
 import { DEFAULT_EXPENSE_CURRENCY, EXPENSE_CURRENCY_OPTIONS, parseExpenseAmountInput } from '@/lib/expenses';
-import { computeReceiptReconciliation } from '@/lib/receipt/reconcile';
+import { computeReceiptReconciliation, roundMoney } from '@/lib/receipt/reconcile';
 import {
   fetchExpenseForReview,
   fetchExpenseItems,
   fetchReceiptProcessingJob,
+  deleteExpenseAndReceipt,
   signedReceiptImageUrl,
 } from '@/lib/receipt/receipt-api';
-import type { ParsedReceiptPayload } from '@/lib/receipt/types';
 import { saveReceiptReview } from '@/lib/receipt/save-review';
-import type { ReceiptReviewItem } from '@/lib/receipt/types';
+import type { ParsedReceiptPayload, ReceiptReviewItem } from '@/lib/receipt/types';
 import type { Expense, ExpenseItem } from '@/types/database';
 
 function itemFromRow(row: ExpenseItem): ReceiptReviewItem {
@@ -59,16 +61,19 @@ function newItem(sortOrder: number): ReceiptReviewItem {
 }
 
 export default function ReceiptReviewScreen() {
+  const { user } = useAuth();
   const { id, expenseId } = useLocalSearchParams<{ id: string; expenseId: string }>();
   const spaceId = Array.isArray(id) ? id[0] : id;
   const expenseIdValue = Array.isArray(expenseId) ? expenseId[0] : expenseId;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [expense, setExpense] = useState<Expense | null>(null);
   const [items, setItems] = useState<ReceiptReviewItem[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
+  const [imageViewerVisible, setImageViewerVisible] = useState(false);
   const [ackMismatch, setAckMismatch] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -121,13 +126,25 @@ export default function ReceiptReviewScreen() {
       total: Number(expense.total),
     });
   }, [expense, items]);
+  const canManage = Boolean(user?.id && expense?.created_by === user.id);
 
   const updateExpenseField = <K extends keyof Expense>(key: K, value: Expense[K]) => {
     setExpense((prev) => (prev ? { ...prev, [key]: value } : prev));
   };
 
+  const setItemsWithSubtotal = (nextItems: ReceiptReviewItem[]) => {
+    setItems(nextItems);
+    updateExpenseField(
+      'subtotal',
+      roundMoney(nextItems.reduce((sum, item) => sum + Number(item.line_total), 0)),
+    );
+    setAckMismatch(false);
+  };
+
   const updateItem = (itemId: string, patch: Partial<ReceiptReviewItem>) => {
-    setItems((prev) => prev.map((item) => (item.id === itemId ? { ...item, ...patch } : item)));
+    setItemsWithSubtotal(
+      items.map((item) => (item.id === itemId ? { ...item, ...patch } : item)),
+    );
   };
 
   const moveItem = (index: number, direction: -1 | 1) => {
@@ -145,6 +162,16 @@ export default function ReceiptReviewScreen() {
 
     if (!expense.expense_title.trim()) {
       setErrorMessage('Expense title is required.');
+      return;
+    }
+
+    if (expense.expense_date && !/^\d{4}-\d{2}-\d{2}$/.test(expense.expense_date)) {
+      setErrorMessage('Enter the date as YYYY-MM-DD.');
+      return;
+    }
+
+    if (!/^[A-Z]{3}$/.test(expense.original_currency)) {
+      setErrorMessage('Choose a valid 3-letter currency.');
       return;
     }
 
@@ -177,6 +204,9 @@ export default function ReceiptReviewScreen() {
           unit_price: item.unit_price,
           line_total: item.line_total,
           sort_order: index,
+          category: item.category,
+          source_text: item.source_text,
+          confidence: item.confidence,
         })),
     });
 
@@ -191,6 +221,55 @@ export default function ReceiptReviewScreen() {
       pathname: '/spaces/[id]/expenses/[expenseId]',
       params: { id: spaceId, expenseId: expenseIdValue },
     });
+  };
+
+  const performDelete = async () => {
+    if (!expenseIdValue || !spaceId || deleting) return;
+    setDeleting(true);
+    setErrorMessage(null);
+
+    const result = await deleteExpenseAndReceipt(expenseIdValue);
+    setDeleting(false);
+
+    if (!result.ok) {
+      setErrorMessage(result.error ?? 'Could not delete this expense.');
+      return;
+    }
+
+    const navigateToExpenses = () =>
+      router.replace({ pathname: '/spaces/[id]/expenses', params: { id: spaceId } });
+
+    if (result.cleanupWarning) {
+      Alert.alert('Expense deleted', result.cleanupWarning, [
+        { text: 'OK', onPress: navigateToExpenses },
+      ]);
+      return;
+    }
+
+    navigateToExpenses();
+  };
+
+  const confirmDelete = () => {
+    Alert.alert(
+      'Delete expense?',
+      'This permanently deletes the expense, receipt image, and processing data.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => void performDelete() },
+      ],
+    );
+  };
+
+  const openReceiptViewer = async () => {
+    const receiptPath = expense?.receipt_image_path;
+    if (!receiptPath) return;
+    const freshUrl = await signedReceiptImageUrl(receiptPath);
+    if (!freshUrl) {
+      setErrorMessage('Could not open the receipt image. Please try again.');
+      return;
+    }
+    setThumbUrl(freshUrl);
+    setImageViewerVisible(true);
   };
 
   if (loading || !expense) {
@@ -222,7 +301,17 @@ export default function ReceiptReviewScreen() {
 
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {thumbUrl ? (
-          <Image source={{ uri: thumbUrl }} style={styles.thumb} contentFit="cover" />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="View full receipt"
+            onPress={() => void openReceiptViewer()}
+            style={styles.thumbButton}>
+            <Image source={{ uri: thumbUrl }} style={styles.thumb} contentFit="cover" />
+            <View style={styles.expandBadge}>
+              <Ionicons name="expand-outline" size={18} color={PeakColors.textInverse} />
+              <Text style={styles.expandText}>View receipt</Text>
+            </View>
+          </Pressable>
         ) : null}
 
         {warnings.length > 0 ? (
@@ -312,7 +401,7 @@ export default function ReceiptReviewScreen() {
           <PeakButton
             title="Add item"
             variant="secondary"
-            onPress={() => setItems((prev) => [...prev, newItem(prev.length)])}
+            onPress={() => setItemsWithSubtotal([...items, newItem(items.length)])}
           />
         </View>
 
@@ -330,7 +419,11 @@ export default function ReceiptReviewScreen() {
                 <Pressable onPress={() => moveItem(index, 1)} hitSlop={8}>
                   <Ionicons name="arrow-down" size={18} color={PeakColors.textSecondary} />
                 </Pressable>
-                <Pressable onPress={() => setItems((prev) => prev.filter((row) => row.id !== item.id))} hitSlop={8}>
+                <Pressable
+                  onPress={() =>
+                    setItemsWithSubtotal(items.filter((row) => row.id !== item.id))
+                  }
+                  hitSlop={8}>
                   <Ionicons name="trash-outline" size={18} color={PeakColors.error} />
                 </Pressable>
               </View>
@@ -342,7 +435,15 @@ export default function ReceiptReviewScreen() {
               value={String(item.quantity)}
               onChangeText={(raw) => {
                 const parsed = parseExpenseAmountInput(raw);
-                if (parsed && parsed > 0) updateItem(item.id, { quantity: parsed });
+                if (parsed && parsed > 0) {
+                  updateItem(item.id, {
+                    quantity: parsed,
+                    line_total:
+                      item.unit_price === null
+                        ? item.line_total
+                        : Math.round(parsed * item.unit_price * 100) / 100,
+                  });
+                }
               }}
             />
             <PeakInput
@@ -351,7 +452,13 @@ export default function ReceiptReviewScreen() {
               value={item.unit_price === null ? '' : String(item.unit_price)}
               onChangeText={(raw) => {
                 const parsed = parseExpenseAmountInput(raw);
-                updateItem(item.id, { unit_price: parsed });
+                updateItem(item.id, {
+                  unit_price: parsed,
+                  line_total:
+                    parsed === null
+                      ? item.line_total
+                      : Math.round(item.quantity * parsed * 100) / 100,
+                });
               }}
             />
             <PeakInput
@@ -360,7 +467,14 @@ export default function ReceiptReviewScreen() {
               value={String(item.line_total)}
               onChangeText={(raw) => {
                 const parsed = parseExpenseAmountInput(raw);
-                updateItem(item.id, { line_total: parsed ?? 0 });
+                const lineTotal = parsed ?? 0;
+                updateItem(item.id, {
+                  line_total: lineTotal,
+                  unit_price:
+                    item.quantity > 0
+                      ? Math.round((lineTotal / item.quantity) * 100) / 100
+                      : item.unit_price,
+                });
               }}
             />
           </View>
@@ -370,8 +484,29 @@ export default function ReceiptReviewScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
-        <PeakButton fullWidth loading={saving} title="Mark reviewed & save" onPress={handleSave} />
+        <PeakButton
+          fullWidth
+          loading={saving}
+          disabled={!canManage || deleting}
+          title="Mark reviewed & save"
+          onPress={handleSave}
+        />
+        {canManage ? (
+          <Pressable
+            accessibilityRole="button"
+            disabled={saving || deleting}
+            onPress={confirmDelete}
+            style={styles.deleteButton}>
+            <Text style={styles.deleteText}>{deleting ? 'Deleting…' : 'Delete expense'}</Text>
+          </Pressable>
+        ) : null}
       </View>
+
+      <ReceiptImageViewer
+        visible={imageViewerVisible}
+        imageUrl={thumbUrl}
+        onClose={() => setImageViewerVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -388,7 +523,21 @@ const styles = StyleSheet.create({
   topTitle: { ...Typography.h3, flex: 1, textAlign: 'center' },
   spacer: { width: 24 },
   scroll: { padding: Spacing.lg, gap: Spacing.md, paddingBottom: 120 },
+  thumbButton: { position: 'relative' },
   thumb: { width: '100%', height: 160, borderRadius: BorderRadius.medium },
+  expandBadge: {
+    position: 'absolute',
+    right: Spacing.sm,
+    bottom: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.pill,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+  },
+  expandText: { ...Typography.caption, color: PeakColors.textInverse, fontWeight: '700' },
   warningBox: {
     padding: Spacing.md,
     borderRadius: BorderRadius.medium,
@@ -437,8 +586,11 @@ const styles = StyleSheet.create({
   error: { ...Typography.bodySmall, color: PeakColors.error, textAlign: 'center' },
   footer: {
     padding: Spacing.lg,
+    gap: Spacing.xs,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: PeakColors.border,
     backgroundColor: PeakColors.background,
   },
+  deleteButton: { minHeight: 40, alignItems: 'center', justifyContent: 'center' },
+  deleteText: { ...Typography.label, color: PeakColors.error },
 });

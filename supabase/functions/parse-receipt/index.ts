@@ -33,6 +33,8 @@ function safeClientError(code: string): string {
       return 'We could not understand the receipt data. Please review and edit manually.';
     case 'timeout':
       return 'Receipt reading timed out. Please try again.';
+    case 'invalid_image':
+      return 'The receipt file is not a supported image. Please choose a JPEG, PNG, or WebP image.';
     default:
       return 'Receipt scanning failed. Please try again or enter the expense manually.';
   }
@@ -104,6 +106,13 @@ async function callOpenAiVision(base64Image: string, mimeType: string): Promise<
   }
 
   const schema = receiptJsonSchema();
+  const imageUrl = `data:${mimeType};base64,${base64Image}`;
+
+  console.log('Sending receipt image to OpenAI', {
+    mimeType,
+    transport: 'base64-data-url',
+    encodedByteLength: base64Image.length,
+  });
 
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
@@ -133,7 +142,7 @@ async function callOpenAiVision(base64Image: string, mimeType: string): Promise<
             },
             {
               type: 'input_image',
-              image_url: `data:${mimeType};base64,${base64Image}`,
+              image_url: imageUrl,
             },
           ],
         },
@@ -170,19 +179,57 @@ async function callOpenAiVision(base64Image: string, mimeType: string): Promise<
   return JSON.parse(outputText);
 }
 
-function mimeFromPath(path: string): string {
-  const ext = path.split('.').pop()?.toLowerCase();
-  switch (ext) {
-    case 'png':
-      return 'image/png';
-    case 'webp':
-      return 'image/webp';
-    case 'heic':
-    case 'heif':
-      return 'image/heic';
-    default:
-      return 'image/jpeg';
+function detectSupportedImageMime(bytes: Uint8Array): string | null {
+  if (
+    bytes.length >= 3 &&
+    bytes[0] === 0xff &&
+    bytes[1] === 0xd8 &&
+    bytes[2] === 0xff
+  ) {
+    return 'image/jpeg';
   }
+
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return 'image/png';
+  }
+
+  if (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return 'image/webp';
+  }
+
+  return null;
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+  const chunkSize = 0x8000;
+  const chunks: string[] = [];
+
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length));
+    chunks.push(String.fromCharCode(...chunk));
+  }
+
+  return btoa(chunks.join(''));
 }
 
 Deno.serve(async (req) => {
@@ -294,13 +341,21 @@ Deno.serve(async (req) => {
     }
 
     const bytes = new Uint8Array(await file.arrayBuffer());
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    const base64Image = btoa(binary);
-    const mimeType = mimeFromPath(receiptPath);
+    const mimeType = detectSupportedImageMime(bytes);
 
+    console.log('Downloaded receipt image', {
+      storagePath: receiptPath,
+      declaredMimeType: file.type || 'unknown',
+      detectedMimeType: mimeType ?? 'unsupported',
+      byteSize: bytes.length,
+      transport: 'private-storage-download',
+    });
+
+    if (!mimeType || bytes.length === 0) {
+      throw new Error('invalid_image');
+    }
+
+    const base64Image = encodeBase64(bytes);
     const rawModel = await callOpenAiVision(base64Image, mimeType);
     const normalized = normalizeRawReceiptPayload(rawModel);
     const validated = validateParsedReceiptPayload(normalized);

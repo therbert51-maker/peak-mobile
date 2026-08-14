@@ -11,6 +11,7 @@ type ExpenseListItemProps = {
   expense: ManualExpense;
   membersById: Map<string, TripMember>;
   onPress?: () => void;
+  onLongPress?: () => void;
 };
 
 function formatExpenseDate(iso: string): string {
@@ -25,7 +26,12 @@ function formatExpenseDate(iso: string): string {
   }
 }
 
-export function ExpenseListItem({ expense, membersById, onPress }: ExpenseListItemProps) {
+export function ExpenseListItem({
+  expense,
+  membersById,
+  onPress,
+  onLongPress,
+}: ExpenseListItemProps) {
   const payer = expense.paidBy ? membersById.get(expense.paidBy) : null;
   const paidByLabel = payer ? tripMemberDisplayName(payer) : 'Unknown';
 
@@ -35,7 +41,7 @@ export function ExpenseListItem({ expense, membersById, onPress }: ExpenseListIt
       : null;
 
   return (
-    <PeakCard padding="md" style={styles.card} onPress={onPress}>
+    <PeakCard padding="md" style={styles.card} onPress={onPress} onLongPress={onLongPress}>
       <View style={styles.row}>
         <View style={styles.iconWrap}>
           <Ionicons name="receipt-outline" size={22} color={PeakColors.primary} />

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import {
   createManualExpense,
@@ -6,6 +6,7 @@ import {
   type CreateManualExpenseInput,
   type ManualExpense,
 } from '@/lib/expenses';
+import { deleteExpenseAndReceipt } from '@/lib/receipt/receipt-api';
 
 type LoadState = 'idle' | 'loading' | 'success' | 'error';
 
@@ -37,10 +38,6 @@ export function useSpaceExpenses(spaceId: string | undefined) {
     setLoadState('success');
   }, [spaceId]);
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
   const addExpense = useCallback(
     async (input: CreateManualExpenseInput) => {
       const { data, error } = await createManualExpense(input);
@@ -57,11 +54,34 @@ export function useSpaceExpenses(spaceId: string | undefined) {
     [],
   );
 
+  const removeExpense = useCallback(async (expenseId: string) => {
+    const result = await deleteExpenseAndReceipt(expenseId);
+
+    if (!result.ok) {
+      return {
+        ok: false as const,
+        error: result.error ?? 'Could not delete this expense.',
+        cleanupWarning: null,
+      };
+    }
+
+    setExpenses((prev) => prev.filter((expense) => expense.id !== expenseId));
+    setLoadState('success');
+    setErrorMessage(null);
+
+    return {
+      ok: true as const,
+      error: null,
+      cleanupWarning: result.cleanupWarning,
+    };
+  }, []);
+
   return {
     expenses,
     loadState,
     errorMessage,
     refresh,
     addExpense,
+    removeExpense,
   };
 }

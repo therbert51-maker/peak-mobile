@@ -1,21 +1,38 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ReceiptImageViewer } from '@/components/expenses/ReceiptImageViewer';
 import { PeakButton } from '@/components/ui/PeakButton';
 import { PeakCard } from '@/components/ui/PeakCard';
+import { useAuth } from '@/contexts/auth-provider';
 import { PeakColors } from '@/constants/colors';
 import { BorderRadius, Spacing, Typography } from '@/constants/theme';
 import { formatExpenseAmount } from '@/lib/expenses';
-import { fetchExpenseForReview, fetchExpenseItems } from '@/lib/receipt/receipt-api';
+import {
+  deleteExpenseAndReceipt,
+  fetchExpenseForReview,
+  fetchExpenseItems,
+  signedReceiptImageUrl,
+} from '@/lib/receipt/receipt-api';
 import { useTripMembers } from '@/hooks/use-trip-members';
 import { tripMemberDisplayName } from '@/lib/trip-members';
 import { supabase } from '@/lib/supabase';
 import type { Expense, ExpenseItem } from '@/types/database';
 
 export default function ExpenseDetailScreen() {
+  const { user } = useAuth();
   const { id, expenseId } = useLocalSearchParams<{ id: string; expenseId: string }>();
   const spaceId = Array.isArray(id) ? id[0] : id;
   const expenseIdValue = Array.isArray(expenseId) ? expenseId[0] : expenseId;
@@ -24,7 +41,10 @@ export default function ExpenseDetailScreen() {
   const [items, setItems] = useState<ExpenseItem[]>([]);
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
+  const [imageViewerVisible, setImageViewerVisible] = useState(false);
 
   const { members } = useTripMembers(spaceId, ownerId);
   const membersById = useMemo(() => new Map(members.map((m) => [m.userId, m])), [members]);
@@ -48,6 +68,13 @@ export default function ExpenseDetailScreen() {
     setExpense(expenseResult.data);
     setItems(itemsResult.data ?? []);
     setOwnerId(spaceResult.data?.owner_id ?? null);
+
+    if (expenseResult.data.receipt_image_path) {
+      setReceiptUrl(await signedReceiptImageUrl(expenseResult.data.receipt_image_path));
+    } else {
+      setReceiptUrl(null);
+    }
+
     setLoading(false);
   }, [expenseIdValue, spaceId]);
 
@@ -73,6 +100,55 @@ export default function ExpenseDetailScreen() {
   }
 
   const payer = expense.paid_by ? membersById.get(expense.paid_by) : null;
+  const canManage = Boolean(user?.id && expense.created_by === user.id);
+
+  const performDelete = async () => {
+    if (!expenseIdValue || !spaceId || deleting) return;
+    setDeleting(true);
+    setErrorMessage(null);
+
+    const result = await deleteExpenseAndReceipt(expenseIdValue);
+    setDeleting(false);
+
+    if (!result.ok) {
+      setErrorMessage(result.error ?? 'Could not delete this expense.');
+      return;
+    }
+
+    const navigateToExpenses = () =>
+      router.replace({ pathname: '/spaces/[id]/expenses', params: { id: spaceId } });
+
+    if (result.cleanupWarning) {
+      Alert.alert('Expense deleted', result.cleanupWarning, [
+        { text: 'OK', onPress: navigateToExpenses },
+      ]);
+      return;
+    }
+
+    navigateToExpenses();
+  };
+
+  const confirmDelete = () => {
+    Alert.alert(
+      'Delete expense?',
+      'This permanently deletes the expense, receipt image, and processing data.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => void performDelete() },
+      ],
+    );
+  };
+
+  const openReceiptViewer = async () => {
+    if (!expense.receipt_image_path) return;
+    const freshUrl = await signedReceiptImageUrl(expense.receipt_image_path);
+    if (!freshUrl) {
+      setErrorMessage('Could not open the receipt image. Please try again.');
+      return;
+    }
+    setReceiptUrl(freshUrl);
+    setImageViewerVisible(true);
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -101,6 +177,20 @@ export default function ExpenseDetailScreen() {
           ) : null}
         </PeakCard>
 
+        {receiptUrl ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="View full receipt"
+            onPress={() => void openReceiptViewer()}
+            style={styles.receiptButton}>
+            <Image source={{ uri: receiptUrl }} style={styles.receiptImage} contentFit="cover" />
+            <View style={styles.expandBadge}>
+              <Ionicons name="expand-outline" size={18} color={PeakColors.textInverse} />
+              <Text style={styles.expandText}>View receipt</Text>
+            </View>
+          </Pressable>
+        ) : null}
+
         {items.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Items</Text>
@@ -115,9 +205,9 @@ export default function ExpenseDetailScreen() {
           </View>
         ) : null}
 
-        {expense.receipt_status === 'needs_review' ? (
+        {canManage ? (
           <PeakButton
-            title="Continue review"
+            title={expense.receipt_status === 'needs_review' ? 'Continue review' : 'Edit expense'}
             onPress={() =>
               router.push({
                 pathname: '/spaces/[id]/expenses/[expenseId]/review',
@@ -126,7 +216,25 @@ export default function ExpenseDetailScreen() {
             }
           />
         ) : null}
+
+        {canManage ? (
+          <Pressable
+            accessibilityRole="button"
+            disabled={deleting}
+            onPress={confirmDelete}
+            style={styles.deleteButton}>
+            <Text style={styles.deleteText}>{deleting ? 'Deleting…' : 'Delete expense'}</Text>
+          </Pressable>
+        ) : null}
+
+        {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
       </ScrollView>
+
+      <ReceiptImageViewer
+        visible={imageViewerVisible}
+        imageUrl={receiptUrl}
+        onClose={() => setImageViewerVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -149,8 +257,25 @@ const styles = StyleSheet.create({
   meta: { ...Typography.caption, marginTop: Spacing.sm, color: PeakColors.textSecondary },
   section: { gap: Spacing.sm },
   sectionTitle: { ...Typography.h3 },
+  receiptButton: { position: 'relative' },
+  receiptImage: { width: '100%', height: 220, borderRadius: BorderRadius.medium },
+  expandBadge: {
+    position: 'absolute',
+    right: Spacing.sm,
+    bottom: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.pill,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+  },
+  expandText: { ...Typography.caption, color: PeakColors.textInverse, fontWeight: '700' },
   itemCard: { marginBottom: Spacing.sm },
   itemName: { ...Typography.label },
   itemMeta: { ...Typography.caption, marginTop: 4 },
+  deleteButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  deleteText: { ...Typography.label, color: PeakColors.error },
   error: { ...Typography.bodySmall, textAlign: 'center', margin: Spacing.xl },
 });

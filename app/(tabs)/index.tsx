@@ -76,6 +76,14 @@ export default function HomeScreen() {
     router.push('/save');
   };
 
+  const goToSplit = () => {
+    router.navigate('/(tabs)/split');
+  };
+
+  const openSpace = (spaceId: string) => {
+    router.push(`/spaces/${spaceId}`);
+  };
+
   const inspirationSubtitle = (item: InspirationListItem) => {
     if (item.spaces?.destination?.trim()) {
       return item.spaces.destination.trim();
@@ -152,7 +160,7 @@ export default function HomeScreen() {
             <TouchableOpacity
               key={space.id}
               style={styles.spaceCard}
-              onPress={() => router.push(`/spaces/${space.id}`)}
+              onPress={() => openSpace(space.id)}
             >
               <Text style={styles.spaceEmoji}>{space.emoji}</Text>
               <Text style={styles.spaceTitle}>{space.name}</Text>
@@ -213,7 +221,12 @@ export default function HomeScreen() {
         )}
       </View>
 
-      <View style={styles.splitCard}>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Open trip expenses"
+        activeOpacity={0.88}
+        style={styles.splitCard}
+        onPress={goToSplit}>
         <View style={styles.splitIcon}>
           <Text style={styles.splitEmoji}>🧾</Text>
         </View>
@@ -225,7 +238,7 @@ export default function HomeScreen() {
             Scan a receipt, claim your items and see who owes what.
           </Text>
         </View>
-      </View>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
