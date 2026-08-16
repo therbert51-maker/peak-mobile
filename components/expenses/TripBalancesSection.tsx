@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Avatar } from '@/components/ui/Avatar';
 import { PeakCard } from '@/components/ui/PeakCard';
@@ -7,6 +7,7 @@ import { PeakColors } from '@/constants/colors';
 import { BorderRadius, Spacing, Typography } from '@/constants/theme';
 import { formatExpenseAmount } from '@/lib/expenses';
 import type { MemberCurrencyBalance, TripBalanceSummary } from '@/lib/trip-balances';
+import type { SettlementTransfer } from '@/lib/trip-settlement';
 import {
   tripMemberDisplayName,
   tripMemberInitials,
@@ -18,6 +19,7 @@ type TripBalancesSectionProps = {
   membersById: Map<string, TripMember>;
   loading?: boolean;
   errorMessage?: string | null;
+  onSelectTransfer?: (transfer: SettlementTransfer, currency: string) => void;
 };
 
 function memberLabel(userId: string, membersById: Map<string, TripMember>): string {
@@ -45,16 +47,26 @@ function MemberAvatar({
   );
 }
 
-function formatNet(amount: number, currency: string): string {
+function formatBalanceAmount(amount: number, currency: string): string {
   if (amount === 0) return formatExpenseAmount(0, currency);
   const prefix = amount > 0 ? '+' : '−';
   return `${prefix}${formatExpenseAmount(Math.abs(amount), currency)}`;
 }
 
-function netStyle(net: number) {
-  if (net > 0) return styles.netPositive;
-  if (net < 0) return styles.netNegative;
-  return styles.netNeutral;
+function balanceAmountStyle(net: number) {
+  if (net > 0) return styles.balancePositive;
+  if (net < 0) return styles.balanceNegative;
+  return styles.balanceNeutral;
+}
+
+function formatSettlementDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 function MemberBalanceRow({
@@ -75,13 +87,16 @@ function MemberBalanceRow({
             {memberLabel(memberBalance.userId, membersById)}
           </Text>
         </View>
-        <Text
-          style={[styles.netAmount, netStyle(memberBalance.net)]}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.85}>
-          {formatNet(memberBalance.net, currency)}
-        </Text>
+        <View style={styles.balanceBlock}>
+          <Text style={styles.balanceLabel}>Balance</Text>
+          <Text
+            style={[styles.balanceAmount, balanceAmountStyle(memberBalance.net)]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}>
+            {formatBalanceAmount(memberBalance.net, currency)}
+          </Text>
+        </View>
       </View>
 
       <View style={styles.memberStatsRow}>
@@ -107,6 +122,7 @@ export function TripBalancesSection({
   membersById,
   loading = false,
   errorMessage = null,
+  onSelectTransfer,
 }: TripBalancesSectionProps) {
   return (
     <PeakCard padding="md" style={styles.card}>
@@ -160,9 +176,18 @@ export function TripBalancesSection({
             ) : (
               <View style={styles.transferList}>
                 {currencyBalance.transfers.map((transfer, index) => (
-                  <View
+                  <Pressable
                     key={`${transfer.fromUserId}-${transfer.toUserId}-${index}`}
-                    style={styles.transferRow}>
+                    accessibilityRole="button"
+                    accessibilityLabel={`Mark payment from ${memberLabel(
+                      transfer.fromUserId,
+                      membersById,
+                    )} to ${memberLabel(transfer.toUserId, membersById)} as paid`}
+                    onPress={() => onSelectTransfer?.(transfer, currencyBalance.currency)}
+                    style={({ pressed }) => [
+                      styles.transferRow,
+                      pressed && styles.transferPressed,
+                    ]}>
                     <MemberAvatar userId={transfer.fromUserId} membersById={membersById} />
                     <View style={styles.transferTextWrap}>
                       <Text style={styles.transferText} numberOfLines={2}>
@@ -178,13 +203,53 @@ export function TripBalancesSection({
                     <Text style={styles.transferAmount} numberOfLines={1}>
                       {formatExpenseAmount(transfer.amount, currencyBalance.currency)}
                     </Text>
-                  </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={16}
+                      color={PeakColors.textMuted}
+                    />
+                  </Pressable>
                 ))}
               </View>
             )}
           </View>
         ))
       )}
+
+      {summary.completedSettlements.length > 0 ? (
+        <View style={styles.history}>
+          <View style={styles.divider} />
+          <Text style={styles.historyLabel}>Settled</Text>
+          <View style={styles.historyList}>
+            {summary.completedSettlements.map((settlement) => (
+              <View key={settlement.id} style={styles.historyRow}>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={18}
+                  color={PeakColors.success}
+                />
+                <View style={styles.historyTextWrap}>
+                  <Text style={styles.historyText} numberOfLines={2}>
+                    <Text style={styles.historyName}>
+                      {memberLabel(settlement.fromUserId, membersById)}
+                    </Text>
+                    {' paid '}
+                    <Text style={styles.historyName}>
+                      {memberLabel(settlement.toUserId, membersById)}
+                    </Text>
+                  </Text>
+                  <Text style={styles.historyDate}>
+                    {formatSettlementDate(settlement.settledAt)}
+                  </Text>
+                </View>
+                <Text style={styles.historyAmount} numberOfLines={1}>
+                  {formatExpenseAmount(settlement.amount, settlement.currency)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
     </PeakCard>
   );
 }
@@ -247,22 +312,31 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  netAmount: {
+  balanceBlock: {
+    alignItems: 'flex-end',
+    flexShrink: 0,
+    maxWidth: '46%',
+  },
+  balanceLabel: {
+    ...Typography.caption,
+    color: PeakColors.textSecondary,
+    fontWeight: '600',
+    marginBottom: 1,
+  },
+  balanceAmount: {
     ...Typography.h3,
     fontSize: 16,
     lineHeight: 20,
     fontVariant: ['tabular-nums'],
-    flexShrink: 0,
     textAlign: 'right',
-    maxWidth: '42%',
   },
-  netPositive: {
+  balancePositive: {
     color: PeakColors.success,
   },
-  netNegative: {
+  balanceNegative: {
     color: PeakColors.error,
   },
-  netNeutral: {
+  balanceNeutral: {
     color: PeakColors.textSecondary,
   },
   memberStatsRow: {
@@ -314,6 +388,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.sm,
     paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.small,
+  },
+  transferPressed: {
+    backgroundColor: PeakColors.primaryLight,
   },
   transferTextWrap: {
     flex: 1,
@@ -333,6 +411,48 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     textAlign: 'right',
     minWidth: 72,
+  },
+  history: {
+    marginTop: Spacing.xs,
+  },
+  historyLabel: {
+    ...Typography.caption,
+    color: PeakColors.textSecondary,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: Spacing.sm,
+  },
+  historyList: {
+    gap: Spacing.sm,
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  historyTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  historyText: {
+    ...Typography.caption,
+    color: PeakColors.textSecondary,
+  },
+  historyName: {
+    fontWeight: '700',
+    color: PeakColors.textPrimary,
+  },
+  historyDate: {
+    ...Typography.caption,
+    color: PeakColors.textMuted,
+    marginTop: 1,
+  },
+  historyAmount: {
+    ...Typography.caption,
+    color: PeakColors.textSecondary,
+    fontVariant: ['tabular-nums'],
+    flexShrink: 0,
   },
   empty: {
     ...Typography.bodySmall,

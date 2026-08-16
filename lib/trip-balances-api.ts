@@ -3,6 +3,7 @@ import { fetchManualExpensesForSpace } from '@/lib/expenses';
 import { formatSupabaseError } from '@/lib/spaces';
 import { supabase } from '@/lib/supabase';
 import type { TripMember } from '@/lib/trip-members';
+import { fetchCompletedSettlements } from '@/lib/trip-settlements-api';
 
 type ParticipantRow = {
   expense_id: string;
@@ -21,31 +22,39 @@ export async function fetchTripBalanceSummary(
 
   const expenses = expensesResult.data ?? [];
   const expenseIds = expenses.map((expense) => expense.id);
+  const settlementsResult = await fetchCompletedSettlements(spaceId);
 
-  if (expenseIds.length === 0) {
-    return {
-      data: computeTripBalances({ expenses: [], participants: [], members }),
-      error: null,
-    };
+  if (settlementsResult.error) {
+    return { data: null, error: settlementsResult.error };
   }
 
-  const { data, error } = await supabase
-    .from('expense_participants')
-    .select('expense_id, user_id, total_owed')
-    .in('expense_id', expenseIds);
+  let participantRows: ParticipantRow[] = [];
 
-  if (error) {
-    return { data: null, error: formatSupabaseError(error) };
+  if (expenseIds.length > 0) {
+    const { data, error } = await supabase
+      .from('expense_participants')
+      .select('expense_id, user_id, total_owed')
+      .in('expense_id', expenseIds);
+
+    if (error) {
+      return { data: null, error: formatSupabaseError(error) };
+    }
+    participantRows = (data ?? []) as ParticipantRow[];
   }
 
-  const participants = ((data ?? []) as ParticipantRow[]).map((row) => ({
+  const participants = participantRows.map((row) => ({
     expenseId: row.expense_id,
     userId: row.user_id,
     totalOwed: Number(row.total_owed),
   }));
 
   return {
-    data: computeTripBalances({ expenses, participants, members }),
+    data: computeTripBalances({
+      expenses,
+      participants,
+      members,
+      settlements: settlementsResult.data ?? [],
+    }),
     error: null,
   };
 }

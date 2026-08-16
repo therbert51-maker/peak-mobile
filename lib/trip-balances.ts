@@ -26,6 +26,17 @@ export type ExpenseParticipantShare = {
   totalOwed: number;
 };
 
+export type CompletedTripSettlement = {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  amount: number;
+  currency: string;
+  createdBy: string;
+  createdAt: string;
+  settledAt: string;
+};
+
 export type MemberCurrencyBalance = {
   userId: string;
   paid: number;
@@ -42,6 +53,7 @@ export type CurrencyTripBalance = {
 export type TripBalanceSummary = {
   currencies: CurrencyTripBalance[];
   finalizedExpenseCount: number;
+  completedSettlements: CompletedTripSettlement[];
 };
 
 function addCents(map: Map<string, number>, userId: string, cents: number) {
@@ -71,7 +83,9 @@ export function computeTripBalances(input: {
   expenses: ManualExpense[];
   participants: ExpenseParticipantShare[];
   members: TripMemberRef[];
+  settlements?: CompletedTripSettlement[];
 }): TripBalanceSummary {
+  const completedSettlements = input.settlements ?? [];
   const finalizedIds = finalizedExpenseIds(input.expenses, input.participants);
   const expenseById = new Map(input.expenses.map((expense) => [expense.id, expense]));
 
@@ -109,9 +123,17 @@ export function computeTripBalances(input: {
   for (const map of shareCentsByCurrency.values()) {
     for (const userId of map.keys()) allUserIds.add(userId);
   }
+  for (const settlement of completedSettlements) {
+    allUserIds.add(settlement.fromUserId);
+    allUserIds.add(settlement.toUserId);
+  }
 
   const currencies = Array.from(
-    new Set([...paidCentsByCurrency.keys(), ...shareCentsByCurrency.keys()]),
+    new Set([
+      ...paidCentsByCurrency.keys(),
+      ...shareCentsByCurrency.keys(),
+      ...completedSettlements.map((settlement) => settlement.currency.toUpperCase()),
+    ]),
   ).sort();
 
   const currencyBalances: CurrencyTripBalance[] = currencies.map((currency) => {
@@ -125,6 +147,13 @@ export function computeTripBalances(input: {
       netCentsByUser.set(userId, paidCents - shareCents);
     }
 
+    for (const settlement of completedSettlements) {
+      if (settlement.currency.toUpperCase() !== currency) continue;
+      const amountCents = toCents(settlement.amount);
+      addCents(netCentsByUser, settlement.fromUserId, amountCents);
+      addCents(netCentsByUser, settlement.toUserId, -amountCents);
+    }
+
     const members = Array.from(allUserIds)
       .map((userId) => {
         const paidCents = paidMap.get(userId) ?? 0;
@@ -133,7 +162,7 @@ export function computeTripBalances(input: {
           userId,
           paid: paidCents / 100,
           share: shareCents / 100,
-          net: (paidCents - shareCents) / 100,
+          net: (netCentsByUser.get(userId) ?? 0) / 100,
         };
       })
       .filter((entry) => entry.paid !== 0 || entry.share !== 0 || entry.net !== 0)
@@ -154,5 +183,6 @@ export function computeTripBalances(input: {
   return {
     currencies: currencyBalances,
     finalizedExpenseCount: finalizedIds.size,
+    completedSettlements,
   };
 }
