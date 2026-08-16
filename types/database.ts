@@ -158,7 +158,15 @@ export type Database = {
           space_id?: string;
           created_by?: string | null;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'inspiration_space_id_fkey';
+            columns: ['space_id'];
+            isOneToOne: false;
+            referencedRelation: 'spaces';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       itinerary_items: {
         Row: {
@@ -626,7 +634,16 @@ export type Database = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      save_expense_split: {
+        Args: {
+          p_expense_id: string;
+          p_assignments: Json;
+          p_participants: Json;
+        };
+        Returns: undefined;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

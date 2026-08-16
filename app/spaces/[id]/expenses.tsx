@@ -23,6 +23,7 @@ import {
 import { AddExpenseChooserModal } from '@/components/expenses/AddExpenseChooserModal';
 import { SwipeableExpenseListItem } from '@/components/expenses/SwipeableExpenseListItem';
 import { ExpenseSummarySection } from '@/components/expenses/ExpenseSummarySection';
+import { TripBalancesSection } from '@/components/expenses/TripBalancesSection';
 import { ExpensesEmptyState } from '@/components/expenses/ExpensesEmptyState';
 import { PeakButton } from '@/components/ui/PeakButton';
 import { useAuth } from '@/contexts/auth-provider';
@@ -37,6 +38,7 @@ import {
 } from '@/lib/expense-routes';
 import { computeExpenseSummary } from '@/lib/expense-summary';
 import { useSpaceExpenses } from '@/hooks/use-space-expenses';
+import { useTripBalances } from '@/hooks/use-trip-balances';
 import { useTripMembers } from '@/hooks/use-trip-members';
 import { validateManualExpenseInput } from '@/lib/expenses';
 import { supabase } from '@/lib/supabase';
@@ -63,7 +65,13 @@ export default function SpaceExpensesScreen() {
     loadState: membersLoadState,
     errorMessage: membersError,
     refresh: refreshMembers,
-  } = useTripMembers(spaceId, space?.owner_id);
+  } = useTripMembers(spaceId, space?.owner_id, { refreshOnFocus: true });
+  const {
+    summary: tripBalanceSummary,
+    loadState: tripBalancesLoadState,
+    errorMessage: tripBalancesError,
+    refresh: refreshTripBalances,
+  } = useTripBalances(spaceId, members);
 
   const [chooserVisible, setChooserVisible] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -83,7 +91,8 @@ export default function SpaceExpensesScreen() {
   useFocusEffect(
     useCallback(() => {
       void refresh();
-    }, [refresh]),
+      void refreshTripBalances();
+    }, [refresh, refreshTripBalances]),
   );
 
   const loadSpace = useCallback(async () => {
@@ -243,6 +252,7 @@ export default function SpaceExpensesScreen() {
             onPress={() => {
               void loadSpace();
               void refresh();
+              void refreshTripBalances();
             }}
             style={styles.retry}
           />
@@ -262,13 +272,22 @@ export default function SpaceExpensesScreen() {
             refreshControl={
               <RefreshControl
                 refreshing={loadState === 'loading' && expenses.length > 0}
-                onRefresh={refresh}
+                onRefresh={() => {
+                  void refresh();
+                  void refreshTripBalances();
+                }}
                 tintColor={PeakColors.primary}
               />
             }
             ListHeaderComponent={
               <>
                 <ExpenseSummarySection summary={expenseSummary} />
+                <TripBalancesSection
+                  summary={tripBalanceSummary}
+                  membersById={membersById}
+                  loading={tripBalancesLoadState === 'loading'}
+                  errorMessage={tripBalancesError}
+                />
                 {listError || listActionError ? (
                   <View style={styles.inlineError}>
                     <Text style={styles.errorText}>{listActionError ?? listError}</Text>
