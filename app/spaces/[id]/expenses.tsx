@@ -21,8 +21,10 @@ import {
   type AddExpenseFormState,
 } from '@/components/expenses/AddExpenseModal';
 import { AddExpenseChooserModal } from '@/components/expenses/AddExpenseChooserModal';
-import { SwipeableExpenseListItem } from '@/components/expenses/SwipeableExpenseListItem';
 import { ExpenseSummarySection } from '@/components/expenses/ExpenseSummarySection';
+import { SettlementConfirmationModal } from '@/components/expenses/SettlementConfirmationModal';
+import { SwipeableExpenseListItem } from '@/components/expenses/SwipeableExpenseListItem';
+import { TripBalancesSection } from '@/components/expenses/TripBalancesSection';
 import { ExpensesEmptyState } from '@/components/expenses/ExpensesEmptyState';
 import { PeakButton } from '@/components/ui/PeakButton';
 import { useAuth } from '@/contexts/auth-provider';
@@ -37,10 +39,22 @@ import {
 } from '@/lib/expense-routes';
 import { computeExpenseSummary } from '@/lib/expense-summary';
 import { useSpaceExpenses } from '@/hooks/use-space-expenses';
+import { useTripBalances } from '@/hooks/use-trip-balances';
 import { useTripMembers } from '@/hooks/use-trip-members';
 import { validateManualExpenseInput } from '@/lib/expenses';
 import { supabase } from '@/lib/supabase';
+import type { SettlementTransfer } from '@/lib/trip-settlement';
+import { markSettlementPaid } from '@/lib/trip-settlements-api';
+import {
+  tripMemberDisplayName,
+  tripMemberInitials,
+} from '@/lib/trip-members';
 import type { Space } from '@/types/database';
+
+type SelectedSettlement = {
+  transfer: SettlementTransfer;
+  currency: string;
+};
 
 export default function SpaceExpensesScreen() {
   const { user } = useAuth();
@@ -63,7 +77,13 @@ export default function SpaceExpensesScreen() {
     loadState: membersLoadState,
     errorMessage: membersError,
     refresh: refreshMembers,
-  } = useTripMembers(spaceId, space?.owner_id);
+  } = useTripMembers(spaceId, space?.owner_id, { refreshOnFocus: true });
+  const {
+    summary: tripBalanceSummary,
+    loadState: tripBalancesLoadState,
+    errorMessage: tripBalancesError,
+    refresh: refreshTripBalances,
+  } = useTripBalances(spaceId, members);
 
   const [chooserVisible, setChooserVisible] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -71,6 +91,9 @@ export default function SpaceExpensesScreen() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [listActionError, setListActionError] = useState<string | null>(null);
+  const [selectedSettlement, setSelectedSettlement] = useState<SelectedSettlement | null>(null);
+  const [settlementSaving, setSettlementSaving] = useState(false);
+  const [settlementError, setSettlementError] = useState<string | null>(null);
 
   const openSwipeableRef = useRef<Swipeable | null>(null);
 
@@ -80,10 +103,53 @@ export default function SpaceExpensesScreen() {
     [expenses, members],
   );
 
+  const memberName = useCallback(
+    (userId: string) => {
+      const member = membersById.get(userId);
+      if (!member) return 'Former member';
+      const name = tripMemberDisplayName(member);
+      return name === 'Member' ? `Member ${tripMemberInitials(member)}` : name;
+    },
+    [membersById],
+  );
+
+  const closeSettlementModal = useCallback(() => {
+    if (settlementSaving) return;
+    setSelectedSettlement(null);
+    setSettlementError(null);
+  }, [settlementSaving]);
+
+  const confirmSettlement = useCallback(async () => {
+    if (!spaceId || !user?.id || !selectedSettlement || settlementSaving) return;
+
+    setSettlementSaving(true);
+    setSettlementError(null);
+
+    const result = await markSettlementPaid({
+      spaceId,
+      fromUserId: selectedSettlement.transfer.fromUserId,
+      toUserId: selectedSettlement.transfer.toUserId,
+      amount: selectedSettlement.transfer.amount,
+      currency: selectedSettlement.currency,
+      createdBy: user.id,
+    });
+
+    if (result.error || !result.data) {
+      setSettlementSaving(false);
+      setSettlementError(result.error ?? 'Could not record this payment.');
+      return;
+    }
+
+    await refreshTripBalances();
+    setSettlementSaving(false);
+    setSelectedSettlement(null);
+  }, [refreshTripBalances, selectedSettlement, settlementSaving, spaceId, user?.id]);
+
   useFocusEffect(
     useCallback(() => {
       void refresh();
-    }, [refresh]),
+      void refreshTripBalances();
+    }, [refresh, refreshTripBalances]),
   );
 
   const loadSpace = useCallback(async () => {
@@ -243,6 +309,7 @@ export default function SpaceExpensesScreen() {
             onPress={() => {
               void loadSpace();
               void refresh();
+              void refreshTripBalances();
             }}
             style={styles.retry}
           />
@@ -262,13 +329,26 @@ export default function SpaceExpensesScreen() {
             refreshControl={
               <RefreshControl
                 refreshing={loadState === 'loading' && expenses.length > 0}
-                onRefresh={refresh}
+                onRefresh={() => {
+                  void refresh();
+                  void refreshTripBalances();
+                }}
                 tintColor={PeakColors.primary}
               />
             }
             ListHeaderComponent={
               <>
                 <ExpenseSummarySection summary={expenseSummary} />
+                <TripBalancesSection
+                  summary={tripBalanceSummary}
+                  membersById={membersById}
+                  loading={tripBalancesLoadState === 'loading'}
+                  errorMessage={tripBalancesError}
+                  onSelectTransfer={(transfer, currency) => {
+                    setSettlementError(null);
+                    setSelectedSettlement({ transfer, currency });
+                  }}
+                />
                 {listError || listActionError ? (
                   <View style={styles.inlineError}>
                     <Text style={styles.errorText}>{listActionError ?? listError}</Text>
@@ -330,6 +410,26 @@ export default function SpaceExpensesScreen() {
         onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
         onClose={closeAddModal}
         onSave={handleSave}
+      />
+
+      <SettlementConfirmationModal
+        visible={selectedSettlement !== null}
+        payerName={
+          selectedSettlement
+            ? memberName(selectedSettlement.transfer.fromUserId)
+            : ''
+        }
+        recipientName={
+          selectedSettlement
+            ? memberName(selectedSettlement.transfer.toUserId)
+            : ''
+        }
+        amount={selectedSettlement?.transfer.amount ?? 0}
+        currency={selectedSettlement?.currency ?? 'USD'}
+        saving={settlementSaving}
+        errorMessage={settlementError}
+        onCancel={closeSettlementModal}
+        onConfirm={() => void confirmSettlement()}
       />
     </SafeAreaView>
   );
