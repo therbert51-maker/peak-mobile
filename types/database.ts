@@ -41,7 +41,11 @@ export type Database = {
           updated_at: string | null;
           email: string | null;
           full_name: string | null;
+          first_name: string | null;
+          last_name: string | null;
+          display_name: string | null;
           avatar_url: string | null;
+          preferred_currency: string;
         };
         Insert: {
           id: string;
@@ -49,7 +53,11 @@ export type Database = {
           updated_at?: string | null;
           email?: string | null;
           full_name?: string | null;
+          first_name?: string | null;
+          last_name?: string | null;
+          display_name?: string | null;
           avatar_url?: string | null;
+          preferred_currency?: string;
         };
         Update: {
           id?: string;
@@ -57,7 +65,11 @@ export type Database = {
           updated_at?: string | null;
           email?: string | null;
           full_name?: string | null;
+          first_name?: string | null;
+          last_name?: string | null;
+          display_name?: string | null;
           avatar_url?: string | null;
+          preferred_currency?: string;
         };
         Relationships: [];
       };

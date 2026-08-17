@@ -34,14 +34,23 @@ import type { Inspiration, Profile, Space, SpaceMember } from '@/types/database'
 type LoadState = 'loading' | 'success' | 'error';
 
 type MemberPreview = SpaceMember & {
-  profiles: Pick<Profile, 'id' | 'email' | 'full_name' | 'avatar_url'> | null;
+  profiles: Pick<
+    Profile,
+    'id' | 'first_name' | 'last_name' | 'display_name' | 'avatar_url'
+  > | null;
 };
 
-type OwnerPreview = Pick<Profile, 'id' | 'email' | 'full_name' | 'avatar_url'> | null;
+type OwnerPreview = Pick<
+  Profile,
+  'id' | 'first_name' | 'last_name' | 'display_name' | 'avatar_url'
+> | null;
 
 function memberDisplayName(profile: OwnerPreview): string {
   if (!profile) return 'Member';
-  return profile.full_name?.trim() || profile.email?.trim() || 'Member';
+  const structuredName = `${profile.first_name?.trim() ?? ''} ${
+    profile.last_name?.trim() ?? ''
+  }`.trim();
+  return profile.display_name?.trim() || structuredName || 'Member';
 }
 
 function memberInitials(profile: OwnerPreview): string {
@@ -124,7 +133,7 @@ export default function SpaceDetailsScreen() {
         .order('created_at', { ascending: false }),
       supabase
         .from('space_members')
-        .select('*, profiles ( id, email, full_name, avatar_url )')
+        .select('*, profiles ( id, first_name, last_name, display_name, avatar_url )')
         .eq('space_id', spaceId)
         .order('created_at', { ascending: true }),
     ]);
@@ -156,7 +165,7 @@ export default function SpaceDetailsScreen() {
     if (ownerId) {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('id, email, full_name, avatar_url')
+        .select('id, first_name, last_name, display_name, avatar_url')
         .eq('id', ownerId)
         .maybeSingle();
       setOwnerProfile(profile);
