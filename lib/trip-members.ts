@@ -1,10 +1,13 @@
 import { formatSupabaseError } from '@/lib/spaces';
 import { supabase } from '@/lib/supabase';
 
-/** Profile fields used for display; name/email are optional because production schema may omit them. */
+/** Public profile fields used to label members throughout Split and Settle Up. */
 export type TripMemberProfile = {
   id: string;
   avatar_url: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  display_name?: string | null;
   full_name?: string | null;
   email?: string | null;
 };
@@ -17,22 +20,27 @@ export type TripMember = {
 
 export function tripMemberDisplayName(member: TripMember): string {
   const profile = member.profile;
-  const fromProfile = profile?.full_name?.trim() || profile?.email?.trim();
+  const structuredName = `${profile?.first_name?.trim() ?? ''} ${
+    profile?.last_name?.trim() ?? ''
+  }`.trim();
+  const fromProfile =
+    profile?.display_name?.trim() ||
+    structuredName ||
+    profile?.full_name?.trim() ||
+    profile?.email?.trim();
   if (fromProfile) return fromProfile;
   if (member.role === 'owner') return 'Owner';
   return 'Member';
 }
 
 export function tripMemberInitials(member: TripMember): string {
-  const profile = member.profile;
-  if (profile?.full_name?.trim()) {
-    const parts = profile.full_name.trim().split(/\s+/).filter(Boolean);
+  const displayName = tripMemberDisplayName(member);
+  if (displayName !== 'Owner' && displayName !== 'Member') {
+    const parts = displayName.split(/\s+/).filter(Boolean);
     if (parts.length >= 2) {
       return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
     }
-  }
-  if (profile?.email?.trim()) {
-    return profile.email.trim().slice(0, 2).toUpperCase();
+    return displayName.slice(0, 2).toUpperCase();
   }
   return member.userId.replace(/-/g, '').slice(0, 2).toUpperCase();
 }
@@ -76,10 +84,10 @@ async function fetchProfilesForUserIds(
   const map = new Map<string, TripMemberProfile>();
   if (userIds.length === 0) return map;
 
-  // Request only columns that exist in every deployed schema version.
+  // These fields are established by the Settings + Profile v1 migration.
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, avatar_url')
+    .select('id, avatar_url, first_name, last_name, display_name')
     .in('id', userIds);
 
   if (error) {
@@ -88,26 +96,12 @@ async function fetchProfilesForUserIds(
   }
 
   for (const row of data ?? []) {
-    map.set(row.id, { id: row.id, avatar_url: row.avatar_url });
-  }
-
-  // Best-effort name enrichment when optional columns exist.
-  const { data: namedRows, error: nameError } = await supabase
-    .from('profiles')
-    .select('id, full_name, email')
-    .in('id', userIds);
-
-  if (nameError) {
-    console.warn('[trip-members] Could not load profile names:', nameError.message);
-    return map;
-  }
-
-  for (const row of namedRows ?? []) {
-    const existing = map.get(row.id) ?? { id: row.id, avatar_url: null };
     map.set(row.id, {
-      ...existing,
-      full_name: row.full_name ?? null,
-      email: row.email ?? null,
+      id: row.id,
+      avatar_url: row.avatar_url,
+      first_name: row.first_name,
+      last_name: row.last_name,
+      display_name: row.display_name,
     });
   }
 
