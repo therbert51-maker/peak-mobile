@@ -25,5 +25,6 @@ export const supabase = createClient<Database>(supabaseUrl.trim(), supabaseAnonK
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    flowType: 'pkce',
   },
 });

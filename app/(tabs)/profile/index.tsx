@@ -8,10 +8,12 @@ import { CurrencyPickerModal } from '@/components/settings/CurrencyPickerModal';
 import { SettingsRow } from '@/components/settings/SettingsRow';
 import { SettingsDivider, SettingsSection } from '@/components/settings/SettingsSection';
 import { Avatar } from '@/components/ui/Avatar';
+import { PeakButton } from '@/components/ui/PeakButton';
 import { PeakColors } from '@/constants/colors';
 import { BorderRadius, Spacing, Typography } from '@/constants/theme';
 import { formatAuthError, useAuth } from '@/contexts/auth-provider';
 import { useUserProfile } from '@/hooks/use-user-profile';
+import { resetToSignIn } from '@/lib/auth-app-navigation';
 import {
   profileDisplayName,
   profileInitials,
@@ -25,6 +27,7 @@ function showPlaceholder(title: string) {
 export default function SettingsScreen() {
   const { user, signOut } = useAuth();
   const { profile, loadState, errorMessage, refresh, save } = useUserProfile(user?.id);
+  const visibleProfile = profile && user?.id && profile.id === user.id ? profile : null;
   const [currencyPickerVisible, setCurrencyPickerVisible] = useState(false);
   const [preferenceSaving, setPreferenceSaving] = useState(false);
   const [preferenceMessage, setPreferenceMessage] = useState<string | null>(null);
@@ -39,11 +42,11 @@ export default function SettingsScreen() {
 
   const handleCurrencySelect = async (currency: SupportedCurrency) => {
     setCurrencyPickerVisible(false);
-    if (!profile || currency === profile.preferredCurrency) return;
+    if (!visibleProfile || currency === visibleProfile.preferredCurrency) return;
 
     setPreferenceSaving(true);
     setPreferenceMessage(null);
-    const result = await save({ ...profile, preferredCurrency: currency });
+    const result = await save({ ...visibleProfile, preferredCurrency: currency });
     setPreferenceSaving(false);
     setPreferenceMessage(result.error ?? 'Preferred currency updated.');
   };
@@ -59,7 +62,24 @@ export default function SettingsScreen() {
       return;
     }
 
-    router.replace('/sign-in');
+    resetToSignIn();
+  };
+
+  const confirmSignOut = () => {
+    Alert.alert(
+      'Sign out of Peak?',
+      'You can log back in anytime. Your trips, invites, and profile stay in Peak.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: () => {
+            void handleSignOut();
+          },
+        },
+      ],
+    );
   };
 
   const confirmDeleteAccount = () => {
@@ -83,10 +103,12 @@ export default function SettingsScreen() {
     );
   };
 
-  const displayName = profile ? profileDisplayName(profile, user?.email) : 'Peak traveler';
-  const initials = profile ? profileInitials(profile, user?.email) : 'P';
-  const avatarSource = profile?.avatarUrl ? { uri: profile.avatarUrl } : undefined;
-  const loadingProfile = loadState === 'loading' && !profile;
+  const displayName = visibleProfile
+    ? profileDisplayName(visibleProfile, user?.email)
+    : 'Peak traveler';
+  const initials = visibleProfile ? profileInitials(visibleProfile, user?.email) : 'P';
+  const avatarSource = visibleProfile?.avatarUrl ? { uri: visibleProfile.avatarUrl } : undefined;
+  const loadingProfile = loadState === 'loading' || !visibleProfile;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -123,7 +145,7 @@ export default function SettingsScreen() {
           <SettingsRow
             icon="person-outline"
             title="First name"
-            value={profile?.firstName || 'Not set'}
+            value={visibleProfile?.firstName || 'Not set'}
           />
           <SettingsDivider />
           <SettingsRow
@@ -131,7 +153,7 @@ export default function SettingsScreen() {
             iconColor={PeakColors.aqua}
             iconBackground={PeakColors.aquaLight}
             title="Last name"
-            value={profile?.lastName || 'Not set'}
+            value={visibleProfile?.lastName || 'Not set'}
           />
           <SettingsDivider />
           <SettingsRow
@@ -139,7 +161,7 @@ export default function SettingsScreen() {
             iconColor={PeakColors.pink}
             iconBackground={PeakColors.pinkLight}
             title="Display name"
-            value={profile?.displayName || 'Not set'}
+            value={visibleProfile?.displayName || 'Not set'}
           />
           <SettingsDivider />
           <SettingsRow
@@ -163,7 +185,7 @@ export default function SettingsScreen() {
             iconBackground={PeakColors.aquaLight}
             title="Preferred currency"
             subtitle="No exchange-rate conversion yet"
-            value={profile?.preferredCurrency ?? 'USD'}
+            value={visibleProfile?.preferredCurrency ?? 'USD'}
             loading={preferenceSaving}
             onPress={() => setCurrencyPickerVisible(true)}
           />
@@ -188,13 +210,6 @@ export default function SettingsScreen() {
           />
           <SettingsDivider />
           <SettingsRow
-            icon="log-out-outline"
-            title="Sign Out"
-            loading={signingOut}
-            onPress={() => void handleSignOut()}
-          />
-          <SettingsDivider />
-          <SettingsRow
             destructive
             icon="trash-outline"
             iconColor={PeakColors.error}
@@ -203,7 +218,20 @@ export default function SettingsScreen() {
             subtitle="Requires secure server-side deletion"
             onPress={confirmDeleteAccount}
           />
-          {signOutError ? <Text style={[styles.inlineMessage, styles.error]}>{signOutError}</Text> : null}
+          <View style={styles.signOutWrap}>
+            <PeakButton
+              fullWidth
+              loading={signingOut}
+              title="Sign Out"
+              variant="outline"
+              onPress={confirmSignOut}
+            />
+            {signOutError ? (
+              <Text style={[styles.inlineMessage, styles.error, styles.signOutError]}>
+                {signOutError}
+              </Text>
+            ) : null}
+          </View>
         </SettingsSection>
 
         <SettingsSection title="SUPPORT">
@@ -248,7 +276,7 @@ export default function SettingsScreen() {
 
       <CurrencyPickerModal
         visible={currencyPickerVisible}
-        selected={profile?.preferredCurrency ?? 'USD'}
+        selected={visibleProfile?.preferredCurrency ?? 'USD'}
         onClose={() => setCurrencyPickerVisible(false)}
         onSelect={(currency) => void handleCurrencySelect(currency)}
       />
@@ -332,5 +360,17 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: PeakColors.textMuted,
     textAlign: 'center',
+  },
+  signOutWrap: {
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.md,
+    gap: Spacing.sm,
+    backgroundColor: PeakColors.surface,
+  },
+  signOutError: {
+    textAlign: 'center',
+    paddingHorizontal: 0,
+    paddingBottom: 0,
   },
 });

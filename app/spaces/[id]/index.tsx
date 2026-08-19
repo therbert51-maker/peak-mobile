@@ -3,7 +3,6 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,6 +18,7 @@ import {
   tripFormFromSpace,
   type TripEditForm,
 } from '@/components/spaces/EditTripModal';
+import { InvitePeopleModal } from '@/components/spaces/InvitePeopleModal';
 import { ItinerarySection } from '@/components/itinerary/ItinerarySection';
 import { PeakButton } from '@/components/ui/PeakButton';
 import { PeakCard } from '@/components/ui/PeakCard';
@@ -112,6 +112,7 @@ export default function SpaceDetailsScreen() {
   });
   const [tripSaveError, setTripSaveError] = useState<string | null>(null);
   const [tripSaving, setTripSaving] = useState(false);
+  const [inviteModalVisible, setInviteModalVisible] = useState(false);
 
   const isOwner = Boolean(user?.id && space?.owner_id && user.id === space.owner_id);
 
@@ -235,10 +236,6 @@ export default function SpaceDetailsScreen() {
     setSpace(data);
     setTripForm(tripFormFromSpace(data));
     setEditTripVisible(false);
-  };
-
-  const showInvitePlaceholder = () => {
-    Alert.alert('Invites coming soon', 'You will be able to invite friends to this trip in a future update.');
   };
 
   if (loadState === 'loading' && !space) {
@@ -376,12 +373,14 @@ export default function SpaceDetailsScreen() {
             <Text style={styles.emptyInline}>No members listed yet.</Text>
           ) : null}
 
-          <PeakButton
-            title="Invite people"
-            variant="secondary"
-            onPress={showInvitePlaceholder}
-            style={styles.inviteButton}
-          />
+          {isOwner ? (
+            <PeakButton
+              title="Invite people"
+              variant="secondary"
+              onPress={() => setInviteModalVisible(true)}
+              style={styles.inviteButton}
+            />
+          ) : null}
         </PeakCard>
 
         {spaceId ? (
@@ -478,6 +477,12 @@ export default function SpaceDetailsScreen() {
         onChange={(patch) => setTripForm((prev) => ({ ...prev, ...patch }))}
         onClose={closeEditTrip}
         onSave={handleSaveTrip}
+      />
+      <InvitePeopleModal
+        onClose={() => setInviteModalVisible(false)}
+        spaceId={space.id}
+        spaceName={space.name}
+        visible={inviteModalVisible}
       />
     </SafeAreaView>
   );

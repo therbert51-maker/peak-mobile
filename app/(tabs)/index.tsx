@@ -1,5 +1,5 @@
-import { router } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -10,7 +10,10 @@ import {
 } from 'react-native';
 
 import { InspirationPreviewMedia } from '@/components/inspiration/InspirationPreviewMedia';
+import { useAuth } from '@/contexts/auth-provider';
 import { useInspirationRefresh } from '@/hooks/use-inspiration-refresh';
+import { useUserProfile } from '@/hooks/use-user-profile';
+import { homeHeaderIdentity } from '@/lib/home-header-identity';
 import { warnSpacesWithNullOwner } from '@/lib/spaces';
 import { supabase } from '@/lib/supabase';
 import type { Inspiration, Space } from '@/types/database';
@@ -24,6 +27,15 @@ function formatDestination(destination: string | null): string {
 }
 
 export default function HomeScreen() {
+  const { user } = useAuth();
+  return <HomeScreenContent key={user?.id ?? 'signed-out'} />;
+}
+
+function HomeScreenContent() {
+  const { user } = useAuth();
+  const { profile, loadState, refresh } = useUserProfile(user?.id);
+  const visibleProfile = profile && user?.id && profile.id === user.id ? profile : null;
+  const identity = homeHeaderIdentity(user?.id, visibleProfile, loadState);
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [spacesLoading, setSpacesLoading] = useState(true);
   const [inspiration, setInspiration] = useState<InspirationListItem[]>([]);
@@ -69,6 +81,18 @@ export default function HomeScreen() {
 
   useInspirationRefresh(refreshHome);
 
+  useFocusEffect(
+    useCallback(() => {
+      void refresh();
+    }, [refresh]),
+  );
+
+  useEffect(() => {
+    setSpaces([]);
+    setInspiration([]);
+    refreshHome();
+  }, [user?.id, refreshHome]);
+
   const goToSpaces = () => {
     router.push('/spaces');
   };
@@ -107,11 +131,18 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.eyebrow}>PEAK</Text>
-          <Text style={styles.greeting}>Good evening, Ty</Text>
+          <Text style={styles.greeting}>{identity.greeting}</Text>
         </View>
 
-        <TouchableOpacity style={styles.profileButton}>
-          <Text style={styles.profileText}>TH</Text>
+        <TouchableOpacity
+          accessibilityRole="button"
+          onPress={() => router.navigate('/(tabs)/profile')}
+          style={styles.profileButton}>
+          {identity.ready ? (
+            <Text style={styles.profileText}>{identity.initials ?? '?'}</Text>
+          ) : (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          )}
         </TouchableOpacity>
       </View>
 

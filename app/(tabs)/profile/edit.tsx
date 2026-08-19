@@ -46,12 +46,12 @@ export default function EditProfileScreen() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   useEffect(() => {
-    if (!profile) return;
+    if (!profile || !user?.id || profile.id !== user.id) return;
     setFirstName(profile.firstName);
     setLastName(profile.lastName);
     setDisplayName(profile.displayName);
     setCurrency(profile.preferredCurrency);
-  }, [profile]);
+  }, [profile, user?.id]);
 
   const handleSave = async () => {
     const hasName = Boolean(firstName.trim() || lastName.trim() || displayName.trim());

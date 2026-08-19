@@ -9,7 +9,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "tsx --test lib/receipt/receipt.test.ts lib/expense-split.test.ts lib/expense-settlement.test.ts lib/trip-balances.test.ts lib/trip-settlement.test.ts lib/inspiration-preview.test.ts"
+    "test": "tsx --test lib/receipt/receipt.test.ts lib/expense-split.test.ts lib/expense-settlement.test.ts lib/trip-balances.test.ts lib/trip-settlement.test.ts lib/inspiration-preview.test.ts lib/auth-invites.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -19,6 +19,7 @@
     "@react-navigation/native": "^7.1.8",
     "@supabase/supabase-js": "^2.112.0",
     "expo": "~54.0.35",
+    "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.13",
     "expo-font": "~14.0.12",
     "expo-haptics": "~15.0.8",
