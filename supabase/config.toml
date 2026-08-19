@@ -1,3 +1,9 @@
 
+[edge_runtime]
+policy = "per_worker"
+
 [functions.parse-receipt]
+verify_jwt = true
+
+[functions.resolve-inspiration-preview]
 verify_jwt = true

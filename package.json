@@ -9,7 +9,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "tsx --test lib/receipt/receipt.test.ts lib/expense-split.test.ts lib/expense-settlement.test.ts lib/trip-balances.test.ts lib/trip-settlement.test.ts"
+    "test": "tsx --test lib/receipt/receipt.test.ts lib/expense-split.test.ts lib/expense-settlement.test.ts lib/trip-balances.test.ts lib/trip-settlement.test.ts lib/inspiration-preview.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
