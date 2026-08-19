@@ -1,4 +1,5 @@
 import type { AuthError, Session, User } from '@supabase/supabase-js';
+import * as Linking from 'expo-linking';
 import {
   createContext,
   useCallback,
@@ -16,7 +17,17 @@ type AuthContextValue = {
   user: User | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
-  signUp: (email: string, password: string) => Promise<{ error: AuthError | null; needsEmailConfirmation: boolean }>;
+  signUp: (input: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    password: string;
+    next: string;
+  }) => Promise<{ error: AuthError | null; needsEmailConfirmation: boolean }>;
+  sendPasswordReset: (
+    email: string,
+    next: string,
+  ) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<{ error: AuthError | null }>;
 };
 
@@ -57,10 +68,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error };
   }, []);
 
-  const signUp = useCallback(async (email: string, password: string) => {
+  const signUp = useCallback(async (input: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    password: string;
+    next: string;
+  }) => {
+    const firstName = input.firstName.trim();
+    const lastName = input.lastName.trim();
+    const displayName = `${firstName} ${lastName}`.trim();
+    const emailRedirectTo = Linking.createURL('auth/callback', {
+      queryParams: { next: input.next },
+    });
     const { data, error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
+      email: input.email.trim(),
+      password: input.password,
+      options: {
+        emailRedirectTo,
+        data: {
+          first_name: firstName,
+          last_name: lastName,
+          display_name: displayName,
+        },
+      },
     });
 
     return {
@@ -69,8 +100,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const sendPasswordReset = useCallback(async (email: string, next: string) => {
+    const redirectTo = Linking.createURL('auth/callback', {
+      queryParams: {
+        next: '/reset-password',
+        returnTo: next,
+      },
+    });
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo,
+    });
+    return { error };
+  }, []);
+
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut();
+    if (!error) {
+      setSession(null);
+    }
     return { error };
   }, []);
 
@@ -81,9 +128,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       signIn,
       signUp,
+      sendPasswordReset,
       signOut,
     }),
-    [session, loading, signIn, signUp, signOut],
+    [session, loading, signIn, signUp, sendPasswordReset, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

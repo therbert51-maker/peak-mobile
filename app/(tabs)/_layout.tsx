@@ -25,6 +25,7 @@ function SaveTabIcon({ color, focused }: { color: string; focused: boolean }) {
 
 export default function TabLayout() {
   const { session, loading } = useAuth();
+  const sessionUserId = session?.user.id ?? 'signed-out';
 
   if (loading) {
     return (
@@ -40,6 +41,7 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      key={sessionUserId}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: PeakColors.tabActive,

@@ -1,4 +1,10 @@
-import { Link, Redirect, router } from 'expo-router';
+import {
+  Link,
+  Redirect,
+  router,
+  useLocalSearchParams,
+  type Href,
+} from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -8,8 +14,11 @@ import { PeakInput } from '@/components/ui/PeakInput';
 import { formatAuthError, useAuth } from '@/contexts/auth-provider';
 import { PeakColors } from '@/constants/colors';
 import { Spacing, Typography } from '@/constants/theme';
+import { safeAuthDestination } from '@/lib/auth-navigation';
 
 export default function SignInScreen() {
+  const { next: nextParam } = useLocalSearchParams<{ next?: string | string[] }>();
+  const next = safeAuthDestination(nextParam);
   const { signIn, loading: authLoading, session } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,7 +36,7 @@ export default function SignInScreen() {
   }
 
   if (session) {
-    return <Redirect href="/" />;
+    return <Redirect href={next as Href} />;
   }
 
   const handleSignIn = async () => {
@@ -62,7 +71,7 @@ export default function SignInScreen() {
       return;
     }
 
-    router.replace('/');
+    router.replace(next as Href);
   };
 
   return (
@@ -99,17 +108,33 @@ export default function SignInScreen() {
           if (passwordError) setPasswordError(null);
         }}
       />
+      <Pressable
+        hitSlop={8}
+        onPress={() =>
+          router.push({
+            pathname: '/forgot-password',
+            params: { next },
+          } as unknown as Href)
+        }
+        style={styles.forgotPassword}>
+        <Text style={styles.footerLink}>Forgot password?</Text>
+      </Pressable>
       {formError ? <Text style={styles.formError}>{formError}</Text> : null}
       <PeakButton
         fullWidth
         loading={submitting}
-        title="Sign in"
+        title="Log In"
         onPress={handleSignIn}
         style={styles.primaryAction}
       />
       <View style={styles.footerRow}>
         <Text style={styles.footerText}>New to Peak?</Text>
-        <Link href="/sign-up" asChild>
+        <Link
+          href={{
+            pathname: '/sign-up',
+            params: { next },
+          }}
+          asChild>
           <Pressable hitSlop={8}>
             <Text style={styles.footerLink}>Create an account</Text>
           </Pressable>
@@ -136,7 +161,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   primaryAction: {
-    marginTop: Spacing.xl,
+    marginTop: Spacing.lg,
+  },
+  forgotPassword: {
+    alignSelf: 'flex-end',
+    marginTop: Spacing.sm,
   },
   footerRow: {
     flexDirection: 'row',

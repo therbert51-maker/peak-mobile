@@ -142,6 +142,56 @@ export type Database = {
         };
         Relationships: [];
       };
+      space_invites: {
+        Row: {
+          id: string;
+          space_id: string;
+          invited_email: string;
+          invited_by: string;
+          token: string;
+          status: 'pending' | 'accepted' | 'revoked' | 'expired';
+          created_at: string;
+          expires_at: string;
+          accepted_by: string | null;
+          accepted_at: string | null;
+          revoked_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          space_id: string;
+          invited_email: string;
+          invited_by: string;
+          token?: string;
+          status?: 'pending' | 'accepted' | 'revoked' | 'expired';
+          created_at?: string;
+          expires_at?: string;
+          accepted_by?: string | null;
+          accepted_at?: string | null;
+          revoked_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          space_id?: string;
+          invited_email?: string;
+          invited_by?: string;
+          token?: string;
+          status?: 'pending' | 'accepted' | 'revoked' | 'expired';
+          created_at?: string;
+          expires_at?: string;
+          accepted_by?: string | null;
+          accepted_at?: string | null;
+          revoked_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'space_invites_space_id_fkey';
+            columns: ['space_id'];
+            isOneToOne: false;
+            referencedRelation: 'spaces';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       inspiration: {
         Row: {
           id: string;
@@ -671,6 +721,52 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      accept_space_invite: {
+        Args: {
+          p_token: string;
+        };
+        Returns: {
+          space_id: string;
+          outcome: 'joined' | 'already_member';
+        }[];
+      };
+      create_space_invite: {
+        Args: {
+          p_space_id: string;
+          p_invited_email: string;
+        };
+        Returns: {
+          id: string;
+          space_id: string;
+          invited_email: string;
+          token: string;
+          status: 'pending';
+          created_at: string;
+          expires_at: string;
+        }[];
+      };
+      get_space_invite: {
+        Args: {
+          p_token: string;
+        };
+        Returns: {
+          invite_id: string;
+          status: 'pending' | 'accepted' | 'revoked' | 'expired';
+          expires_at: string;
+          invited_email_hint: string;
+          space_name: string;
+          destination: string | null;
+          start_date: string | null;
+          end_date: string | null;
+          invited_by_name: string;
+        }[];
+      };
+      revoke_space_invite: {
+        Args: {
+          p_invite_id: string;
+        };
+        Returns: boolean;
+      };
       save_expense_split: {
         Args: {
           p_expense_id: string;
@@ -690,6 +786,7 @@ export type Space = Database['public']['Tables']['spaces']['Row'];
 export type SpaceInsert = Database['public']['Tables']['spaces']['Insert'];
 export type SpaceMember = Database['public']['Tables']['space_members']['Row'];
 export type SpaceMemberInsert = Database['public']['Tables']['space_members']['Insert'];
+export type SpaceInvite = Database['public']['Tables']['space_invites']['Row'];
 export type Inspiration = Database['public']['Tables']['inspiration']['Row'];
 export type InspirationInsert = Database['public']['Tables']['inspiration']['Insert'];
 export type ItineraryItem = Database['public']['Tables']['itinerary_items']['Row'];
