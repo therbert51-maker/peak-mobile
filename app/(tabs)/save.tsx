@@ -23,6 +23,7 @@ import { PeakInput } from '@/components/ui/PeakInput';
 import { useAuth } from '@/contexts/auth-provider';
 import { PeakColors } from '@/constants/colors';
 import { BorderRadius, Spacing, Typography } from '@/constants/theme';
+import { requestInspirationPreviewNonBlocking } from '@/lib/inspiration-preview-api';
 import { notifyInspirationSaved } from '@/lib/inspiration-refresh';
 import { formatSupabaseError, warnSpacesWithNullOwner } from '@/lib/spaces';
 import { supabase } from '@/lib/supabase';
@@ -139,23 +140,37 @@ export default function SaveScreen() {
     setSaving(true);
 
     try {
-      const { error } = await supabase.from('inspiration').insert({
-        title: trimmedTitle,
-        url: form.url.trim() || null,
-        notes: form.notes.trim() || null,
-        space_id: form.spaceId!,
-        created_by: user.id,
-      });
+      const { data, error } = await supabase
+        .from('inspiration')
+        .insert({
+          title: trimmedTitle,
+          url: form.url.trim() || null,
+          notes: form.notes.trim() || null,
+          space_id: form.spaceId!,
+          created_by: user.id,
+        })
+        .select('id')
+        .single();
 
-      if (error) {
+      if (error || !data) {
         console.error('Save inspiration insert failed:', error);
-        const message = formatSupabaseError(error);
+        const message = error
+          ? formatSupabaseError(error)
+          : 'Could not save this inspiration.';
         setSaveError(message);
         Alert.alert('Could not save inspiration', message);
         return;
       }
 
+      const savedUrl = form.url.trim();
       savedSpaceIdRef.current = form.spaceId;
+      if (savedUrl) {
+        requestInspirationPreviewNonBlocking({
+          inspirationId: data.id,
+          spaceId: form.spaceId!,
+          url: savedUrl,
+        });
+      }
       setSuccessModalVisible(true);
     } catch (error) {
       console.error('Save inspiration unexpected error:', error);

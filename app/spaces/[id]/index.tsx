@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { InspirationPreviewMedia } from '@/components/inspiration/InspirationPreviewMedia';
 import {
   buildTripUpdatePayload,
   EditTripModal,
@@ -442,17 +443,27 @@ export default function SpaceDetailsScreen() {
                 onPress={() => router.push(`/inspiration/${item.id}`)}
                 padding="md"
                 style={styles.inspirationCard}>
-                <Text style={styles.inspirationTitle}>{item.title}</Text>
-                {item.notes ? (
-                  <Text style={styles.inspirationNotes} numberOfLines={2}>
-                    {item.notes}
-                  </Text>
-                ) : null}
-                {item.url ? (
-                  <Text style={styles.inspirationUrl} numberOfLines={1}>
-                    {item.url}
-                  </Text>
-                ) : null}
+                <View style={styles.inspirationCardRow}>
+                  <InspirationPreviewMedia
+                    item={item}
+                    fallbackEmoji={space?.emoji ?? '✨'}
+                    fallbackTitle={item.title}
+                    fallbackNotes={item.notes}
+                  />
+                  <View style={styles.inspirationCardCopy}>
+                    <Text style={styles.inspirationTitle}>{item.title}</Text>
+                    {item.notes || item.preview_description ? (
+                      <Text style={styles.inspirationNotes} numberOfLines={2}>
+                        {item.notes || item.preview_description}
+                      </Text>
+                    ) : null}
+                    {item.url ? (
+                      <Text style={styles.inspirationUrl} numberOfLines={1}>
+                        {item.url}
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
               </PeakCard>
             ))}
           </View>
@@ -715,6 +726,15 @@ const styles = StyleSheet.create({
   },
   inspirationCard: {
     marginBottom: Spacing.sm,
+  },
+  inspirationCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  inspirationCardCopy: {
+    flex: 1,
+    minWidth: 0,
   },
   inspirationTitle: {
     ...Typography.h3,

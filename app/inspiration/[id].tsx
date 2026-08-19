@@ -15,12 +15,15 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { InspirationPreviewMedia } from '@/components/inspiration/InspirationPreviewMedia';
 import { PeakButton } from '@/components/ui/PeakButton';
 import { PeakCard } from '@/components/ui/PeakCard';
 import { PeakInput } from '@/components/ui/PeakInput';
 import { useAuth } from '@/contexts/auth-provider';
 import { PeakColors } from '@/constants/colors';
 import { BorderRadius, Spacing, Typography } from '@/constants/theme';
+import { isInstagramPreviewSource } from '@/lib/inspiration-preview-caption';
+import { requestInspirationPreviewNonBlocking } from '@/lib/inspiration-preview-api';
 import { notifyInspirationSaved } from '@/lib/inspiration-refresh';
 import { formatSupabaseError } from '@/lib/spaces';
 import { supabase } from '@/lib/supabase';
@@ -132,6 +135,8 @@ export default function InspirationDetailsScreen() {
     if (!record || !inspirationId) return;
 
     const trimmedTitle = editTitle.trim();
+    const trimmedUrl = editUrl.trim();
+    const urlChanged = (record.url ?? '').trim() !== trimmedUrl;
     if (!trimmedTitle) {
       setTitleError('Title is required.');
       return;
@@ -146,7 +151,7 @@ export default function InspirationDetailsScreen() {
       .update({
         title: trimmedTitle,
         notes: editNotes.trim() || null,
-        url: editUrl.trim() || null,
+        url: trimmedUrl || null,
       })
       .eq('id', inspirationId)
       .select('*, spaces ( id, emoji, name, destination )')
@@ -165,6 +170,13 @@ export default function InspirationDetailsScreen() {
     setRecord(updated);
     setIsEditing(false);
     notifyInspirationSaved(updated.space_id);
+    if (urlChanged && updated.url) {
+      requestInspirationPreviewNonBlocking({
+        inspirationId: updated.id,
+        spaceId: updated.space_id,
+        url: updated.url,
+      });
+    }
   };
 
   const handleDelete = () => {
@@ -303,8 +315,22 @@ export default function InspirationDetailsScreen() {
             </View>
           ) : (
             <>
+              {record.preview_image_url || isInstagramPreviewSource(record.preview_source) ? (
+                <InspirationPreviewMedia
+                  item={record}
+                  fallbackEmoji={record.spaces?.emoji ?? '✨'}
+                  fallbackTitle={record.title}
+                  fallbackNotes={record.notes}
+                  variant="wide"
+                  style={styles.previewMedia}
+                />
+              ) : null}
               <Text style={styles.title}>{record.title}</Text>
               <Text style={styles.createdAt}>Saved {formatCreatedDate(record.created_at)}</Text>
+              {record.preview_description &&
+              record.preview_description.trim() !== record.notes?.trim() ? (
+                <Text style={styles.previewDescription}>{record.preview_description}</Text>
+              ) : null}
 
               {record.notes ? (
                 <PeakCard style={styles.sectionCard} padding="md">
@@ -424,6 +450,14 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 2,
     marginBottom: Spacing.sm,
+  },
+  previewMedia: {
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  previewDescription: {
+    ...Typography.bodySmall,
+    marginTop: Spacing.sm,
   },
   title: {
     ...Typography.h1,

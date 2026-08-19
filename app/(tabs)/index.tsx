@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 
+import { InspirationPreviewMedia } from '@/components/inspiration/InspirationPreviewMedia';
 import { useInspirationRefresh } from '@/hooks/use-inspiration-refresh';
 import { warnSpacesWithNullOwner } from '@/lib/spaces';
 import { supabase } from '@/lib/supabase';
@@ -206,9 +207,13 @@ export default function HomeScreen() {
               style={styles.inspirationCard}
               onPress={() => router.push(`/inspiration/${item.id}`)}
             >
-              <View style={styles.inspirationImage}>
-                <Text style={styles.inspirationEmoji}>{item.spaces?.emoji ?? '✨'}</Text>
-              </View>
+              <InspirationPreviewMedia
+                item={item}
+                fallbackEmoji={item.spaces?.emoji ?? '✨'}
+                fallbackTitle={item.title}
+                fallbackNotes={item.notes}
+                style={styles.inspirationImage}
+              />
 
               <View style={styles.inspirationDetails}>
                 <Text style={styles.inspirationTitle}>{item.title}</Text>
@@ -463,16 +468,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   inspirationImage: {
-    width: 64,
-    height: 64,
     marginRight: 14,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EEEDE7',
-  },
-  inspirationEmoji: {
-    fontSize: 31,
   },
   inspirationDetails: {
     flex: 1,

@@ -151,6 +151,14 @@ export type Database = {
           notes: string | null;
           space_id: string;
           created_by: string | null;
+          normalized_url: string | null;
+          preview_title: string | null;
+          preview_description: string | null;
+          preview_image_url: string | null;
+          preview_source: string | null;
+          preview_kind: 'video' | 'image' | 'article' | 'website' | null;
+          preview_status: 'pending' | 'processing' | 'ready' | 'failed' | 'skipped';
+          preview_fetched_at: string | null;
         };
         Insert: {
           id?: string;
@@ -160,6 +168,14 @@ export type Database = {
           notes?: string | null;
           space_id: string;
           created_by: string;
+          normalized_url?: string | null;
+          preview_title?: string | null;
+          preview_description?: string | null;
+          preview_image_url?: string | null;
+          preview_source?: string | null;
+          preview_kind?: 'video' | 'image' | 'article' | 'website' | null;
+          preview_status?: 'pending' | 'processing' | 'ready' | 'failed' | 'skipped';
+          preview_fetched_at?: string | null;
         };
         Update: {
           id?: string;
@@ -169,6 +185,14 @@ export type Database = {
           notes?: string | null;
           space_id?: string;
           created_by?: string | null;
+          normalized_url?: string | null;
+          preview_title?: string | null;
+          preview_description?: string | null;
+          preview_image_url?: string | null;
+          preview_source?: string | null;
+          preview_kind?: 'video' | 'image' | 'article' | 'website' | null;
+          preview_status?: 'pending' | 'processing' | 'ready' | 'failed' | 'skipped';
+          preview_fetched_at?: string | null;
         };
         Relationships: [
           {
